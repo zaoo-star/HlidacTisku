@@ -29,17 +29,13 @@
 
         <TextView
             android:id="@+id/w_pct"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
+            android:layout_weight="1"
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
             android:maxLines="1"
             android:textColor="#CCFFFFFF"
             android:textSize="15sp" />
-
-        <View
-            android:layout_width="0dp"
-            android:layout_height="1dp"
-            android:layout_weight="1" />
 
         <TextView
             android:id="@+id/w_cam"

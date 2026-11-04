@@ -66,7 +66,7 @@ class PrintWidget : AppWidgetProvider() {
                 v.setTextViewText(R.id.w_time, "Tisk P1S")
                 v.setTextViewText(R.id.w_info, "Klepni a přihlas se")
                 vis(R.id.w_time, true); vis(R.id.w_info, true)
-                vis(R.id.w_pct, false); vis(R.id.w_progress, false); vis(R.id.w_cam, false)
+                v.setTextViewText(R.id.w_pct, ""); vis(R.id.w_progress, false); vis(R.id.w_cam, false)
             } else {
                 // Hlavní řádek
                 val main = when {
@@ -86,8 +86,8 @@ class PrintWidget : AppWidgetProvider() {
                     active -> "${i.pct} %"
                     else -> ""
                 }
-                v.setTextViewText(R.id.w_pct, pctText)
-                vis(R.id.w_pct, opt("pct") && showTime && pctText.isNotEmpty())
+                // w_pct drží kameru vpravo, proto zůstává viditelný (jen bez textu)
+                v.setTextViewText(R.id.w_pct, if (opt("pct") && showTime) pctText else "")
 
                 val showBar = opt("progress") && (active || i.state == "FINISH")
                 vis(R.id.w_progress, showBar)
