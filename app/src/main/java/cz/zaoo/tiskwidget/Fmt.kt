@@ -16,23 +16,31 @@ object Fmt {
         val name: String,
         val nozzle: Double,
         val bed: Double,
-        val updated: Long,
+        val updated: Long,      // čas, ke kterému platí "remain" (kvůli výpočtu ETA)
+        val realUpdated: Long,  // kdy opravdu přišla data
         val connected: Boolean,
         val error: String,
     )
 
     fun info(s: Store): Info {
         val j = try { JSONObject(s.stateJson) } catch (e: Exception) { JSONObject() }
+        // Zbývající čas odpočítává i mezi zprávami z tiskárny
+        val raw = j.optInt("mc_remaining_time", 0)
+        val st = j.optString("gcode_state", "")
+        val elapsedMin = if (s.lastUpdate > 0 && st == "RUNNING")
+            ((System.currentTimeMillis() - s.lastUpdate) / 60_000L).toInt() else 0
+        val base = if (elapsedMin > 0) s.lastUpdate + elapsedMin * 60_000L else s.lastUpdate
         return Info(
             state = j.optString("gcode_state", ""),
             pct = j.optInt("mc_percent", 0),
-            remain = j.optInt("mc_remaining_time", 0),
+            remain = (raw - elapsedMin).coerceAtLeast(0),
             layer = j.optInt("layer_num", 0),
             total = j.optInt("total_layer_num", 0),
             name = j.optString("subtask_name", "").removeSuffix(".3mf").removeSuffix(".gcode"),
             nozzle = j.optDouble("nozzle_temper", 0.0),
             bed = j.optDouble("bed_temper", 0.0),
-            updated = s.lastUpdate,
+            updated = base,
+            realUpdated = s.lastUpdate,
             connected = s.connected,
             error = s.error,
         )
@@ -90,7 +98,7 @@ object Fmt {
         }
         if (i.state.isNotEmpty()) sb.append(temps(i)).append('\n')
         sb.append(if (i.connected) "🟢 Připojeno" else "🔴 Nepřipojeno")
-        if (i.updated > 0) sb.append("  ·  data z ${clock(i.updated)}")
+        if (i.realUpdated > 0) sb.append("  ·  data z ${clock(i.realUpdated)}")
         if (i.error.isNotEmpty()) sb.append("\n⚠ ").append(i.error)
         return sb.toString()
     }

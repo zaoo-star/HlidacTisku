@@ -110,6 +110,8 @@ class MonitorService : Service() {
         }
         h.removeCallbacks(periodic)
         h.postDelayed(periodic, 5 * 60_000L)
+        h.removeCallbacks(watchdog)
+        h.postDelayed(watchdog, 60_000L)
         return START_STICKY
     }
 
@@ -137,6 +139,23 @@ class MonitorService : Service() {
                 if (c == null) connect(true) else if (c.isConnected) pushAll()
             }
             h.postDelayed(this, 5 * 60_000L)
+        }
+    }
+
+    /**
+     * Každou minutu: překreslí widget (odpočet času) a když od tiskárny
+     * 2 minuty nic nepřišlo, vyžádá si data / obnoví spojení.
+     */
+    private val watchdog = object : Runnable {
+        override fun run() {
+            doUi()
+            val quiet = Fmt.active(Fmt.info(store).state) &&
+                System.currentTimeMillis() - store.lastUpdate > 2 * 60_000L
+            if (quiet) worker.execute {
+                val c = client
+                if (c != null && c.isConnected) pushAll() else connect(true)
+            }
+            h.postDelayed(this, 60_000L)
         }
     }
 

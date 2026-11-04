@@ -99,8 +99,8 @@ class PrintWidget : AppWidgetProvider() {
                 if (opt("eta") && active && i.state != "PAUSE") parts += "hotovo v ${Fmt.eta(i)}"
                 if (opt("layers") && active && i.total > 0) parts += "vrstva ${i.layer}/${i.total}"
                 if (opt("temps") && i.state.isNotEmpty()) parts += "${i.nozzle.toInt()}° / ${i.bed.toInt()}°"
-                if (opt("updated") && i.updated > 0) parts += Fmt.clock(i.updated)
-                val refreshing = store.refreshAt > i.updated && System.currentTimeMillis() - store.refreshAt < 15_000
+                if (opt("updated") && i.realUpdated > 0) parts += Fmt.clock(i.realUpdated)
+                val refreshing = store.refreshAt > i.realUpdated && System.currentTimeMillis() - store.refreshAt < 15_000
                 if (refreshing) parts.add(0, "⟳ obnovuji…")
                 else if (!i.connected) parts += "offline"
                 if (i.error.isNotEmpty() && !active) parts += i.error
