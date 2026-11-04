@@ -102,11 +102,12 @@ class MainActivity : Activity() {
 
         // --- Bambu účet ---
         cloudBox = box()
-        email = et("E-mail k Bambu účtu", store.email, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
-        pass = et("Heslo", "", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
+        email = et("E-mail k Bambu účtu (u Google tvůj Gmail)",store.email, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
+        pass = et("Heslo (u Google nech prázdné)", "", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
         cloudBox.addView(email)
         cloudBox.addView(pass)
-        cloudBox.addView(btn("Přihlásit") { doLogin() })
+        cloudBox.addView(btn("Přihlásit heslem") { doLogin() })
+        cloudBox.addView(btn("Přihlašuju se přes Google → poslat kód na e-mail") { doEmailCode() })
         codeBox = box().apply { visibility = View.GONE }
         code = et("Kód z e-mailu", "", InputType.TYPE_CLASS_NUMBER)
         codeBox.addView(code)
@@ -176,6 +177,20 @@ class MainActivity : Activity() {
         store.email = e
         say("Přihlašuji…")
         thread { handle(BambuCloud.login(e, p)) }
+    }
+
+    /** Účty založené přes Google nemají heslo – přihlásí se jednorázovým kódem z e-mailu. */
+    private fun doEmailCode() {
+        val e = email.text.toString().trim()
+        if (e.isEmpty()) { say("Vyplň e-mail, kterým se přihlašuješ přes Google (Gmail)."); return }
+        store.email = e
+        tfaKey = null
+        say("Posílám kód…")
+        thread {
+            BambuCloud.sendCode(e)
+            runOnUiThread { codeBox.visibility = View.VISIBLE; code.hint = "Kód z e-mailu" }
+            say("Bambu ti poslal kód na $e (mrkni i do spamu). Opiš ho sem a dej Ověřit kód.")
+        }
     }
 
     private fun doCode() {
