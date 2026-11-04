@@ -67,6 +67,12 @@ object Fmt {
         return if (h == 0) "$m min" else "$h h $m min"
     }
 
+    /** Krátký formát pro kulatý/čtvercový widget: 3:32 h nebo 45 min. */
+    fun remainShort(min: Int): String {
+        if (min <= 0) return "0 min"
+        return if (min < 60) "$min min" else "%d:%02d h".format(min / 60, min % 60)
+    }
+
     fun clock(ms: Long): String = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ms))
 
     fun eta(i: Info): String {

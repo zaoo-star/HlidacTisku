@@ -26,6 +26,17 @@ object WidgetOpts {
         Opt("light", "Průhlednější pozadí", false),
     )
 
+    /** Tvary widgetu: klíč, popis, layout. */
+    val SHAPES = listOf(
+        Triple("rect", "Obdélník (3×1)", R.layout.widget),
+        Triple("strip", "Tenký pruh (3×1 nebo 4×1)", R.layout.widget_strip),
+        Triple("square", "Čtverec s kruhovým průběhem (2×2)", R.layout.widget_square),
+        Triple("circle", "Kruh (2×2)", R.layout.widget_circle),
+    )
+
+    fun shape(ctx: Context): String = prefs(ctx).getString("shape", "rect") ?: "rect"
+    fun setShape(ctx: Context, v: String) = prefs(ctx).edit().putString("shape", v).apply()
+
     private fun prefs(ctx: Context) = ctx.applicationContext.getSharedPreferences("widget", Context.MODE_PRIVATE)
 
     fun get(ctx: Context, key: String): Boolean {
@@ -52,26 +63,39 @@ class PrintWidget : AppWidgetProvider() {
         }
 
         /** Sestaví vzhled widgetu (používá se i pro náhled v nastavení). */
-        fun build(ctx: Context, opt: (String) -> Boolean = { WidgetOpts.get(ctx, it) }): RemoteViews {
+        fun build(
+            ctx: Context,
+            opt: (String) -> Boolean = { WidgetOpts.get(ctx, it) },
+            shape: String = WidgetOpts.shape(ctx),
+        ): RemoteViews {
             val store = Store(ctx)
             val i = Fmt.info(store)
-            val v = RemoteViews(ctx.packageName, R.layout.widget)
+            val layout = WidgetOpts.SHAPES.firstOrNull { it.first == shape }?.third ?: R.layout.widget
+            val v = RemoteViews(ctx.packageName, layout)
+            val round = shape == "square" || shape == "circle"
             val active = Fmt.active(i.state)
             fun vis(id: Int, show: Boolean) = v.setViewVisibility(id, if (show) View.VISIBLE else View.GONE)
 
-            v.setInt(R.id.w_root, "setBackgroundResource",
-                if (opt("light")) R.drawable.widget_bg_light else R.drawable.widget_bg)
+            val light = opt("light")
+            when (shape) {
+                "circle" -> v.setInt(R.id.w_bg, "setBackgroundResource",
+                    if (light) R.drawable.circle_bg_light else R.drawable.circle_bg)
+                "strip" -> v.setInt(R.id.w_root, "setBackgroundResource",
+                    if (light) R.drawable.pill_bg_light else R.drawable.pill_bg)
+                else -> v.setInt(R.id.w_root, "setBackgroundResource",
+                    if (light) R.drawable.widget_bg_light else R.drawable.widget_bg)
+            }
 
             if (!store.configured) {
-                v.setTextViewText(R.id.w_time, "Tisk P1S")
-                v.setTextViewText(R.id.w_info, "Klepni a přihlas se")
+                v.setTextViewText(R.id.w_time, if (round) "P1S" else "Tisk P1S")
+                v.setTextViewText(R.id.w_info, if (round) "Klepni" else "Klepni a přihlas se")
                 vis(R.id.w_time, true); vis(R.id.w_info, true)
                 v.setTextViewText(R.id.w_pct, ""); vis(R.id.w_progress, false); vis(R.id.w_cam, false)
             } else {
                 // Hlavní řádek
                 val main = when {
-                    active -> Fmt.remain(i.remain)
-                    i.state == "FINISH" -> "Hotovo ✅"
+                    active -> if (round) Fmt.remainShort(i.remain) else Fmt.remain(i.remain)
+                    i.state == "FINISH" -> if (round) "Hotovo" else "Hotovo ✅"
                     i.state == "FAILED" -> "Chyba ❌"
                     i.state == "IDLE" -> "Nečinná"
                     i.state.isEmpty() -> "—"
@@ -89,14 +113,15 @@ class PrintWidget : AppWidgetProvider() {
                 // w_pct drží kameru vpravo, proto zůstává viditelný (jen bez textu)
                 v.setTextViewText(R.id.w_pct, if (opt("pct") && showTime) pctText else "")
 
-                val showBar = opt("progress") && (active || i.state == "FINISH")
+                val showBar = opt("progress") && (active || i.state == "FINISH" || round)
                 vis(R.id.w_progress, showBar)
-                if (showBar) v.setProgressBar(R.id.w_progress, 100, if (i.state == "FINISH") 100 else i.pct, false)
+                if (showBar) v.setProgressBar(R.id.w_progress, 100,
+                    when { i.state == "FINISH" -> 100; active -> i.pct; else -> 0 }, false)
 
                 // Spodní řádek – poskládaný z vybraných údajů
                 val parts = mutableListOf<String>()
-                if (opt("name") && i.name.isNotEmpty() && (active || i.state == "FINISH")) parts += i.name
-                if (opt("eta") && active && i.state != "PAUSE") parts += "hotovo v ${Fmt.eta(i)}"
+                if (opt("name") && !round && i.name.isNotEmpty() && (active || i.state == "FINISH")) parts += i.name
+                if (opt("eta") && active && i.state != "PAUSE") parts += if (round) Fmt.eta(i) else "hotovo v ${Fmt.eta(i)}"
                 if (opt("layers") && active && i.total > 0) parts += "vrstva ${i.layer}/${i.total}"
                 if (opt("temps") && i.state.isNotEmpty()) parts += "${i.nozzle.toInt()}° / ${i.bed.toInt()}°"
                 if (opt("updated") && i.realUpdated > 0) parts += Fmt.clock(i.realUpdated)
@@ -105,7 +130,7 @@ class PrintWidget : AppWidgetProvider() {
                 else if (!i.connected) parts += "offline"
                 if (i.error.isNotEmpty() && !active) parts += i.error
                 v.setTextViewText(R.id.w_info, parts.joinToString(" · "))
-                vis(R.id.w_info, parts.isNotEmpty())
+                vis(R.id.w_info, parts.isNotEmpty() || shape == "strip")
 
                 vis(R.id.w_cam, opt("cam") && store.hasCamera)
             }
