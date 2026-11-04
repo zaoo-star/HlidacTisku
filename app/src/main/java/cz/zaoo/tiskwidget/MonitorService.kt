@@ -5,8 +5,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Handler
@@ -66,6 +68,21 @@ class MonitorService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /** Po odemčení telefonu si vyžádá čerstvá data (max. jednou za 20 s). */
+    private var lastUnlockRefresh = 0L
+    private val unlockReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val now = System.currentTimeMillis()
+            if (now - lastUnlockRefresh < 20_000) return
+            lastUnlockRefresh = now
+            doUi()  // hned přepočítat odpočet
+            worker.execute {
+                val c = client
+                if (c != null && c.isConnected) pushAll() else connect(true)
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         store = Store(this)
@@ -75,6 +92,11 @@ class MonitorService : Service() {
             old.keys().forEach { state.put(it, old.get(it)) }
         } catch (_: Exception) {}
         lastState = state.optString("gcode_state", "")
+        try {
+            val f = IntentFilter(Intent.ACTION_USER_PRESENT)
+            if (Build.VERSION.SDK_INT >= 33) registerReceiver(unlockReceiver, f, Context.RECEIVER_NOT_EXPORTED)
+            else registerReceiver(unlockReceiver, f)
+        } catch (_: Exception) {}
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -116,6 +138,7 @@ class MonitorService : Service() {
     }
 
     override fun onDestroy() {
+        try { unregisterReceiver(unlockReceiver) } catch (_: Exception) {}
         h.removeCallbacksAndMessages(null)
         val c = client
         client = null
