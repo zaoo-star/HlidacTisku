@@ -145,6 +145,7 @@ class MainActivity : Activity() {
         root.addView(tv("Aby widget běžel spolehlivě", 18f, true).apply { setPadding(0, dp(22), 0, dp(4)) })
         root.addView(btn("🔋 Vypnout úsporu baterie pro tuhle appku") { askBattery() })
         root.addView(btn("➕ Přidat widget na plochu") { pinWidget() })
+        root.addView(btn("🎨 Upravit, co widget ukazuje") { startActivity(Intent(this, WidgetConfigActivity::class.java)) })
         root.addView(tv("Na Xiaomi / Redmi navíc: dlouze podrž ikonu appky → Informace o aplikaci → zapni Autostart a u Úspory baterie dej „Bez omezení“.", 13f, color = 0xFFAAAAAA.toInt()))
         root.addView(btn("Odhlásit a zastavit sledování") { logout() })
 

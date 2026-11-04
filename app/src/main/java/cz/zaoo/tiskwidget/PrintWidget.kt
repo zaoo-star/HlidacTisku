@@ -9,6 +9,33 @@ import android.content.Intent
 import android.view.View
 import android.widget.RemoteViews
 
+/** Co všechno může widget ukazovat (klíč, popis, výchozí stav). */
+object WidgetOpts {
+    data class Opt(val key: String, val label: String, val def: Boolean)
+
+    val ALL = listOf(
+        Opt("time", "Zbývající čas", true),
+        Opt("pct", "Procenta", true),
+        Opt("progress", "Ukazatel průběhu", true),
+        Opt("name", "Název modelu", true),
+        Opt("eta", "Kdy bude hotovo (hodina)", true),
+        Opt("layers", "Vrstvy (38/236)", false),
+        Opt("temps", "Teploty trysky a podložky", false),
+        Opt("updated", "Čas poslední aktualizace", false),
+        Opt("cam", "Tlačítko kamery", true),
+        Opt("light", "Průhlednější pozadí", false),
+    )
+
+    private fun prefs(ctx: Context) = ctx.applicationContext.getSharedPreferences("widget", Context.MODE_PRIVATE)
+
+    fun get(ctx: Context, key: String): Boolean {
+        val def = ALL.firstOrNull { it.key == key }?.def ?: true
+        return prefs(ctx).getBoolean(key, def)
+    }
+
+    fun set(ctx: Context, key: String, v: Boolean) = prefs(ctx).edit().putBoolean(key, v).apply()
+}
+
 class PrintWidget : AppWidgetProvider() {
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
@@ -21,53 +48,69 @@ class PrintWidget : AppWidgetProvider() {
             val mgr = AppWidgetManager.getInstance(ctx)
             val ids = mgr.getAppWidgetIds(ComponentName(ctx, PrintWidget::class.java))
             if (ids.isEmpty()) return
+            mgr.updateAppWidget(ids, build(ctx))
+        }
+
+        /** Sestaví vzhled widgetu (používá se i pro náhled v nastavení). */
+        fun build(ctx: Context, opt: (String) -> Boolean = { WidgetOpts.get(ctx, it) }): RemoteViews {
             val store = Store(ctx)
             val i = Fmt.info(store)
             val v = RemoteViews(ctx.packageName, R.layout.widget)
             val active = Fmt.active(i.state)
+            fun vis(id: Int, show: Boolean) = v.setViewVisibility(id, if (show) View.VISIBLE else View.GONE)
+
+            v.setInt(R.id.w_root, "setBackgroundResource",
+                if (opt("light")) R.drawable.widget_bg_light else R.drawable.widget_bg)
 
             if (!store.configured) {
-                v.setTextViewText(R.id.w_name, "Tisk P1S")
-                v.setTextViewText(R.id.w_time, "Nastav mě")
+                v.setTextViewText(R.id.w_time, "Tisk P1S")
                 v.setTextViewText(R.id.w_info, "Klepni a přihlas se")
-                v.setTextViewText(R.id.w_sub, "")
-                v.setViewVisibility(R.id.w_progress, View.GONE)
+                vis(R.id.w_time, true); vis(R.id.w_info, true)
+                vis(R.id.w_pct, false); vis(R.id.w_progress, false); vis(R.id.w_cam, false)
             } else {
-                v.setTextViewText(R.id.w_name,
-                    if (active && i.name.isNotEmpty()) i.name else store.devName.ifEmpty { "Tisk P1S" })
-                v.setTextViewText(R.id.w_time, when {
+                // Hlavní řádek
+                val main = when {
                     active -> Fmt.remain(i.remain)
                     i.state == "FINISH" -> "Hotovo ✅"
                     i.state == "FAILED" -> "Chyba ❌"
                     i.state == "IDLE" -> "Nečinná"
                     i.state.isEmpty() -> "—"
                     else -> Fmt.stateCz(i.state)
-                })
-                if (active || i.state == "FINISH") {
-                    v.setViewVisibility(R.id.w_progress, View.VISIBLE)
-                    v.setProgressBar(R.id.w_progress, 100, if (i.state == "FINISH") 100 else i.pct, false)
-                } else {
-                    v.setViewVisibility(R.id.w_progress, View.GONE)
                 }
-                v.setTextViewText(R.id.w_info, when {
-                    i.state == "PAUSE" -> "⏸ Pozastaveno · ${i.pct} %"
-                    i.state == "PREPARE" -> "Připravuje tisk…"
-                    active -> "${i.pct} %  ·  hotovo v ${Fmt.eta(i)}"
-                    i.error.isNotEmpty() -> i.error
+                val showTime = opt("time") || !active
+                v.setTextViewText(R.id.w_time, if (showTime) main else "${i.pct} %")
+                vis(R.id.w_time, true)
+
+                val pctText = when {
+                    i.state == "PAUSE" -> "⏸ ${i.pct} %"
+                    active -> "${i.pct} %"
                     else -> ""
-                })
+                }
+                v.setTextViewText(R.id.w_pct, pctText)
+                vis(R.id.w_pct, opt("pct") && showTime && pctText.isNotEmpty())
+
+                val showBar = opt("progress") && (active || i.state == "FINISH")
+                vis(R.id.w_progress, showBar)
+                if (showBar) v.setProgressBar(R.id.w_progress, 100, if (i.state == "FINISH") 100 else i.pct, false)
+
+                // Spodní řádek – poskládaný z vybraných údajů
                 val parts = mutableListOf<String>()
-                if (active && i.total > 0) parts += "vrstva ${i.layer}/${i.total}"
-                if (i.state.isNotEmpty()) parts += "${i.nozzle.toInt()}° / ${i.bed.toInt()}°"
-                if (i.updated > 0) parts += Fmt.clock(i.updated)
+                if (opt("name") && i.name.isNotEmpty() && (active || i.state == "FINISH")) parts += i.name
+                if (opt("eta") && active && i.state != "PAUSE") parts += "hotovo v ${Fmt.eta(i)}"
+                if (opt("layers") && active && i.total > 0) parts += "vrstva ${i.layer}/${i.total}"
+                if (opt("temps") && i.state.isNotEmpty()) parts += "${i.nozzle.toInt()}° / ${i.bed.toInt()}°"
+                if (opt("updated") && i.updated > 0) parts += Fmt.clock(i.updated)
                 if (!i.connected) parts += "offline"
-                v.setTextViewText(R.id.w_sub, parts.joinToString(" · "))
+                if (i.error.isNotEmpty() && !active) parts += i.error
+                v.setTextViewText(R.id.w_info, parts.joinToString(" · "))
+                vis(R.id.w_info, parts.isNotEmpty())
+
+                vis(R.id.w_cam, opt("cam") && store.hasCamera)
             }
 
             v.setOnClickPendingIntent(R.id.w_root, Notifs.openApp(ctx))
             v.setOnClickPendingIntent(R.id.w_cam, Notifs.openCamera(ctx))
-            v.setViewVisibility(R.id.w_cam, if (store.hasCamera) View.VISIBLE else View.GONE)
-            mgr.updateAppWidget(ids, v)
+            return v
         }
     }
 }
