@@ -32,6 +32,13 @@ class MonitorService : Service() {
     companion object {
         const val NOTIF_ID = 1
         const val ACTION_RECONNECT = "cz.zaoo.tiskwidget.RECONNECT"
+        const val ACTION_REFRESH = "cz.zaoo.tiskwidget.REFRESH"
+
+        /** Klepnutí na widget = vyžádat si od tiskárny čerstvá data. */
+        fun refreshIntent(ctx: Context): PendingIntent = PendingIntent.getForegroundService(
+            ctx, 2, Intent(ctx, MonitorService::class.java).setAction(ACTION_REFRESH),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
 
         fun start(ctx: Context, reconnect: Boolean = false) {
             val i = Intent(ctx, MonitorService::class.java)
@@ -89,7 +96,18 @@ class MonitorService : Service() {
             }
             lastState = ""
         }
-        worker.execute { connect(force) }
+        if (intent?.action == ACTION_REFRESH) {
+            store.refreshAt = System.currentTimeMillis()
+            postUi(true)
+            worker.execute {
+                val c = client
+                if (c != null && c.isConnected) pushAll() else connect(true)
+            }
+            // když do 15 s nic nepřijde, schovat „obnovuji…“
+            h.postDelayed({ doUi() }, 16_000)
+        } else {
+            worker.execute { connect(force) }
+        }
         h.removeCallbacks(periodic)
         h.postDelayed(periodic, 5 * 60_000L)
         return START_STICKY
@@ -234,7 +252,8 @@ class MonitorService : Service() {
             lastState = st
             important = true
         }
-        postUi(important)
+        val justRefreshed = System.currentTimeMillis() - store.refreshAt < 16_000
+        postUi(important || justRefreshed)
     }
 
     /** Aktualizace UI max. jednou za 5 s (tiskárna posílá data i několikrát za sekundu). */

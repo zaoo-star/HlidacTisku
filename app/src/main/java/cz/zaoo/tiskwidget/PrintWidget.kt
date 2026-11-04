@@ -100,7 +100,9 @@ class PrintWidget : AppWidgetProvider() {
                 if (opt("layers") && active && i.total > 0) parts += "vrstva ${i.layer}/${i.total}"
                 if (opt("temps") && i.state.isNotEmpty()) parts += "${i.nozzle.toInt()}° / ${i.bed.toInt()}°"
                 if (opt("updated") && i.updated > 0) parts += Fmt.clock(i.updated)
-                if (!i.connected) parts += "offline"
+                val refreshing = store.refreshAt > i.updated && System.currentTimeMillis() - store.refreshAt < 15_000
+                if (refreshing) parts.add(0, "⟳ obnovuji…")
+                else if (!i.connected) parts += "offline"
                 if (i.error.isNotEmpty() && !active) parts += i.error
                 v.setTextViewText(R.id.w_info, parts.joinToString(" · "))
                 vis(R.id.w_info, parts.isNotEmpty())
@@ -108,7 +110,8 @@ class PrintWidget : AppWidgetProvider() {
                 vis(R.id.w_cam, opt("cam") && store.hasCamera)
             }
 
-            v.setOnClickPendingIntent(R.id.w_root, Notifs.openApp(ctx))
+            v.setOnClickPendingIntent(R.id.w_root,
+                if (store.configured) MonitorService.refreshIntent(ctx) else Notifs.openApp(ctx))
             v.setOnClickPendingIntent(R.id.w_cam, Notifs.openCamera(ctx))
             return v
         }

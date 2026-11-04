@@ -50,6 +50,9 @@ class Store(ctx: Context) {
     var lastUpdate: Long
         get() = p.getLong("lastUpdate", 0L)
         set(v) = p.edit().putLong("lastUpdate", v).apply()
+    var refreshAt: Long
+        get() = p.getLong("refreshAt", 0L)
+        set(v) = p.edit().putLong("refreshAt", v).apply()
     var connected: Boolean
         get() = p.getBoolean("connected", false)
         set(v) = p.edit().putBoolean("connected", v).apply()
