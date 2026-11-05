@@ -27,6 +27,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var content: LinearLayout
     private lateinit var list: LinearLayout
     private lateinit var tips: LinearLayout
+    private lateinit var upd: LinearLayout
+    private var updShown = ""
     private var shownIds = ""
     private val holders = HashMap<String, Holder>()
 
@@ -128,6 +130,8 @@ class MainActivity : AppCompatActivity() {
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
             setOnMenuItemClickListener { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)); true }
         }
+        upd = Ui.vbox(this)
+        content.addView(upd)
         tips = Ui.vbox(this)
         content.addView(tips)
         list = Ui.vbox(this)
@@ -154,6 +158,45 @@ class MainActivity : AppCompatActivity() {
         if (Printers.all(this).isNotEmpty()) MonitorService.start(this)
         shownIds = "-"
         h.post(tick)
+        if (Updater.dueForCheck(this, 30 * 60_000L) || Updater.available != null) Thread {
+            val r = if (Updater.dueForCheck(this, 30 * 60_000L)) Updater.check(this) else Updater.available
+            runOnUiThread { showUpdate(r) }
+        }.start()
+    }
+
+    /** Karta „Je dostupná nová verze“ s tlačítkem Aktualizovat. */
+    private fun showUpdate(r: Updater.Rel?) {
+        if (r == null) { upd.removeAllViews(); updShown = ""; return }
+        if (updShown == r.version) return
+        updShown = r.version
+        upd.removeAllViews()
+        val (c, inner) = Ui.card(this, 16)
+        c.setCardBackgroundColor(0xFF0B3D22.toInt())
+        inner.addView(Ui.text(this, "🎉 Je dostupná nová verze ${r.version}", 17f, Ui.TEXT, true))
+        if (r.notes.isNotEmpty()) inner.addView(Ui.text(this, r.notes, 14f, 0xFFB9E8CB.toInt()).apply {
+            setPadding(0, Ui.dp(this@MainActivity, 4), 0, 0)
+        })
+        val status = Ui.text(this, "", 13f, 0xFFB9E8CB.toInt())
+        val btn = Ui.button(this, "Aktualizovat") {}
+        btn.setOnClickListener {
+            if (!Updater.canInstall(this)) {
+                status.text = "Povol appce „Instalovat neznámé aplikace“ a pak klepni znovu na Aktualizovat."
+                return@setOnClickListener
+            }
+            btn.isEnabled = false
+            status.text = "Stahuji…"
+            Thread {
+                try {
+                    val f = Updater.download(this, r) { pc -> runOnUiThread { status.text = "Stahuji… $pc %" } }
+                    runOnUiThread { status.text = "Staženo – potvrď instalaci."; btn.isEnabled = true; Updater.install(this, f) }
+                } catch (e: Exception) {
+                    runOnUiThread { status.text = "Stažení se nepovedlo: ${e.message}"; btn.isEnabled = true }
+                }
+            }.start()
+        }
+        inner.addView(btn, Ui.lp(this, 10, 4))
+        inner.addView(status)
+        upd.addView(c, Ui.lp(this, 4, 12))
     }
 
     override fun onPause() { super.onPause(); h.removeCallbacks(tick) }

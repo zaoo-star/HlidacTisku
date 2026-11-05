@@ -90,6 +90,23 @@ class SettingsActivity : AppCompatActivity() {
             c.addView(acc, Ui.lp(this, 0, 4))
         }
 
+        // Aktualizace
+        c.addView(Ui.section(this, "Aktualizace"))
+        val (u, ui) = Ui.card(this, 14)
+        val us = Ui.text(this, "Nainstalovaná verze ${Updater.current(this)}", 15f)
+        ui.addView(us)
+        ui.addView(Ui.button(this, "Zkontrolovat aktualizace", "tonal") {
+            us.text = "Kontroluji…"
+            Thread {
+                val r = Updater.check(this)
+                runOnUiThread {
+                    us.text = if (r != null) "🎉 Je dostupná verze ${r.version} – aktualizuješ ji na hlavní obrazovce."
+                              else "✅ Máš nejnovější verzi ${Updater.current(this)}."
+                }
+            }.start()
+        }, Ui.lp(this, 10, 0))
+        c.addView(u, Ui.lp(this, 0, 4))
+
         // O aplikaci
         c.addView(Ui.section(this, "O aplikaci"))
         val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { "" }

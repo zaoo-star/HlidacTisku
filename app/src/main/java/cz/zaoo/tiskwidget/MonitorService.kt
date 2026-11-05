@@ -121,6 +121,7 @@ class MonitorService : Service(), Listener {
         }
         h.removeCallbacks(watchdog)
         h.postDelayed(watchdog, 60_000L)
+        Updater.backgroundCheck(this)
         return START_STICKY
     }
 
@@ -232,6 +233,7 @@ class MonitorService : Service(), Listener {
                 val s = Statuses.get(this@MonitorService, p.id)
                 if (s.active && now - s.updated > 2 * 60_000L) connFor(p.id)?.refresh()
             }
+            Updater.backgroundCheck(this@MonitorService)
             h.postDelayed(this, 60_000L)
         }
     }
