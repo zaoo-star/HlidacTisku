@@ -68,7 +68,7 @@ object Ams {
     } catch (_: Exception) { Color.GRAY }
 
     /** Aktivní slot (ze kterého se tiskne), nebo null. */
-    fun current(s: Store): Tray? = trays(s).firstOrNull { it.active && it.type.isNotEmpty() }
+    fun current(ctx: Context, id: String): Tray? = trays(ctx, id).firstOrNull { it.active && it.type.isNotEmpty() }
 
     /** Vyplní řádek barevnými sloty (sdílí appka i nastavení widgetu). */
     fun fillRow(ctx: Context, box: android.widget.LinearLayout, trays: List<Tray>) {
@@ -104,8 +104,8 @@ object Ams {
         }
     }
 
-    fun trays(s: Store): List<Tray> {
-        val j = try { JSONObject(s.stateJson) } catch (_: Exception) { return emptyList() }
+    fun trays(ctx: Context, id: String): List<Tray> {
+        val j = Statuses.raw(ctx, id)
         val out = mutableListOf<Tray>()
         val ams = j.optJSONObject("ams")
         val trayNow = ams?.optString("tray_now", "255") ?: "255"
@@ -152,12 +152,12 @@ object Tasks {
 
     private fun time(s: String): Long = try { Instant.parse(s).toEpochMilli() } catch (_: Exception) { 0L }
 
-    fun list(s: Store, limit: Int): List<Task> {
-        val c = URL("https://api.bambulab.com/v1/user-service/my/tasks?deviceId=${s.serial}&limit=$limit")
+    fun list(token: String, serial: String, limit: Int): List<Task> {
+        val c = URL("https://api.bambulab.com/v1/user-service/my/tasks?deviceId=$serial&limit=$limit")
             .openConnection() as HttpURLConnection
         c.connectTimeout = 20000
         c.readTimeout = 20000
-        c.setRequestProperty("Authorization", "Bearer ${s.token}")
+        c.setRequestProperty("Authorization", "Bearer $token")
         c.setRequestProperty("User-Agent", "bambu_network_agent/01.09.05.01")
         val code = c.responseCode
         val body = (if (code < 400) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
@@ -195,31 +195,23 @@ object Tasks {
     }
 }
 
-/** Náhled právě tištěného modelu (uložený v souboru). */
+/** Náhled právě tištěného modelu (soubor pro každou tiskárnu). */
 object Cover {
-    private fun file(ctx: Context) = File(ctx.filesDir, "cover.png")
+    private fun file(ctx: Context, id: String) = File(ctx.filesDir, "cover_$id.png")
 
-    fun load(ctx: Context, maxPx: Int): Bitmap? = try {
-        val f = file(ctx)
+    fun load(ctx: Context, id: String, maxPx: Int): Bitmap? = try {
+        val f = file(ctx, id)
         if (!f.exists()) null else BitmapFactory.decodeFile(f.absolutePath)?.let { Tasks.scale(it, maxPx) }
     } catch (_: Exception) { null }
 
-    /** Stáhne náhled aktuálního tisku z cloudu (jen při změně modelu). */
-    fun fetch(ctx: Context, s: Store, name: String): Boolean {
-        if (s.mode != "cloud" || s.token.isEmpty()) return false
-        return try {
-            val t = Tasks.list(s, 1).firstOrNull() ?: return false
-            val bmp = Tasks.download(t.cover, 400) ?: return false
-            file(ctx).outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            s.coverName = name
-            true
-        } catch (_: Exception) { false }
+    fun save(ctx: Context, id: String, bmp: Bitmap) {
+        try { file(ctx, id).outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) } } catch (_: Exception) {}
     }
 
-    fun clear(ctx: Context, s: Store) {
-        try { file(ctx).delete() } catch (_: Exception) {}
-        s.coverName = ""
-    }
+    /** Je uložený náhled pro tenhle tisk? */
+    fun valid(s: Status) = s.coverKey.isNotEmpty() && s.coverKey == s.name
+
+    fun clear(ctx: Context, id: String) { try { file(ctx, id).delete() } catch (_: Exception) {} }
 }
 
 /** Hlasitý budík na konci tisku – zvoní jako budík i v tichém režimu. */

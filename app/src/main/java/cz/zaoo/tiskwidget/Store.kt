@@ -7,16 +7,14 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
-/** Uložené nastavení a poslední známý stav tiskárny. */
+/** Globální nastavení appky (Bambu účet, budík, ceny…). Tiskárny jsou v [Printers]. */
 class Store(ctx: Context) {
     private val p = ctx.applicationContext.getSharedPreferences("tisk", Context.MODE_PRIVATE)
 
     private fun s(k: String) = p.getString(k, "") ?: ""
     private fun put(k: String, v: String) = p.edit().putString(k, v).apply()
 
-    var mode: String          // "cloud" nebo "lan"
-        get() = s("mode")
-        set(v) = put("mode", v)
+    // Bambu účet (společný pro všechny Bambu tiskárny přes cloud)
     var email: String
         get() = s("email")
         set(v) = put("email", v)
@@ -26,33 +24,10 @@ class Store(ctx: Context) {
     var username: String
         get() = s("username")
         set(v) = put("username", v)
-    var serial: String
-        get() = s("serial")
-        set(v) = put("serial", v)
-    var devName: String
-        get() = s("devName")
-        set(v) = put("devName", v)
-    var accessCode: String
-        get() = s("accessCode")
-        set(v) = put("accessCode", v)
-    var ip: String                 // ručně zadaná IP
-        get() = s("ip")
-        set(v) = put("ip", v)
-    var autoIp: String     // IP zjištěná z tiskárny
-        get() = s("autoIp")
-        set(v) = put("autoIp", v)
-    var stateJson: String
-        get() = s("state")
-        set(v) = put("state", v)
-    var error: String
-        get() = s("error")
-        set(v) = put("error", v)
-    var lastUpdate: Long
-        get() = p.getLong("lastUpdate", 0L)
-        set(v) = p.edit().putLong("lastUpdate", v).apply()
-    var coverName: String
-        get() = s("coverName")
-        set(v) = put("coverName", v)
+    var cloudError: String
+        get() = s("cloudError")
+        set(v) = put("cloudError", v)
+
     var priceKg: String
         get() = p.getString("priceKg", "600") ?: "600"
         set(v) = put("priceKg", v)
@@ -62,32 +37,37 @@ class Store(ctx: Context) {
     var alarmOn: Boolean
         get() = p.getBoolean("alarmOn", false)
         set(v) = p.edit().putBoolean("alarmOn", v).apply()
-    var cmdMsg: String
-        get() = s("cmdMsg")
-        set(v) = put("cmdMsg", v)
     var refreshAt: Long
         get() = p.getLong("refreshAt", 0L)
         set(v) = p.edit().putLong("refreshAt", v).apply()
-    var connected: Boolean
-        get() = p.getBoolean("connected", false)
-        set(v) = p.edit().putBoolean("connected", v).apply()
+    var migrated: Boolean
+        get() = p.getBoolean("migrated2", false)
+        set(v) = p.edit().putBoolean("migrated2", v).apply()
 
-    val configured: Boolean
-        get() = when (mode) {
-            "cloud" -> token.isNotEmpty() && serial.isNotEmpty() && username.isNotEmpty()
-            "lan" -> ip.isNotEmpty() && serial.isNotEmpty() && accessCode.isNotEmpty()
-            else -> false
-        }
+    val hasCloud get() = token.isNotEmpty() && username.isNotEmpty()
 
-    fun camIp(): String = ip.ifEmpty { autoIp }
-    val hasCamera get() = camIp().isNotEmpty() && accessCode.isNotEmpty()
-
-    fun clearState() {
-        p.edit().remove("state").remove("error").remove("lastUpdate").putBoolean("connected", false).apply()
+    /** Převod nastavení z verze pro jednu tiskárnu. */
+    fun migrate(ctx: Context) {
+        if (migrated) return
+        migrated = true
+        val mode = s("mode")
+        val serial = s("serial")
+        if (mode.isEmpty() || serial.isEmpty()) return
+        val cfg = PrinterCfg(
+            id = "bambu_$serial",
+            name = s("devName").ifEmpty { "Bambu P1S" },
+            type = if (mode == "cloud") PrinterCfg.BAMBU_CLOUD else PrinterCfg.BAMBU_LAN,
+            host = s("ip").ifEmpty { s("autoIp") },
+            serial = serial,
+            accessCode = s("accessCode"),
+        )
+        Printers.add(ctx, cfg)
     }
+
+    fun raw(k: String) = s(k)
 }
 
-/** Tiskárna v LAN má vlastní (self-signed) certifikát. */
+/** Tiskárny v síti mají vlastní (self-signed) certifikát. */
 object Tls {
     fun trustAll(): SSLContext {
         val tm = object : X509TrustManager {

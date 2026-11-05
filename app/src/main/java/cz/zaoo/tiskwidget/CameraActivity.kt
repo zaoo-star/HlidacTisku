@@ -9,6 +9,7 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
+import org.json.JSONObject
 import java.io.BufferedInputStream
 import java.io.DataInputStream
 import java.net.InetSocketAddress
@@ -17,10 +18,7 @@ import java.nio.ByteOrder
 import javax.net.ssl.SSLSocket
 import kotlin.concurrent.thread
 
-/**
- * Živý obraz z kamery P1S (port 6000, JPEG snímky).
- * Funguje jen na stejné Wi-Fi jako tiskárna.
- */
+/** Živý obraz z kamery: Bambu P1/A1 (port 6000) nebo Klipper (snímky z webkamery). */
 class CameraActivity : Activity() {
     @Volatile private var running = true
     @Volatile private var sock: SSLSocket? = null
@@ -33,36 +31,29 @@ class CameraActivity : Activity() {
         val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         img = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
         info = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            textSize = 16f
-            gravity = Gravity.CENTER
-            setPadding(48, 48, 48, 48)
-            text = "Připojuji kameru…"
+            setTextColor(Color.WHITE); textSize = 16f; gravity = Gravity.CENTER
+            setPadding(48, 48, 48, 48); text = "Připojuji kameru…"
         }
         root.addView(img, FrameLayout.LayoutParams(-1, -1))
         root.addView(info, FrameLayout.LayoutParams(-1, -1))
         root.setOnClickListener { finish() }
         setContentView(root)
 
-        val store = Store(this)
-        val ip = store.camIp()
-        val code = store.accessCode
-        if (ip.isEmpty() || code.isEmpty()) {
-            info.text = "Kamera zatím nezná IP adresu tiskárny.\n\nOtevři appku a v nastavení vyplň „IP tiskárny“ (najdeš ji na displeji tiskárny: Nastavení → WLAN)."
-            return
-        }
+        val p = Printers.get(this, intent.getStringExtra("id")) ?: Printers.all(this).firstOrNull()
+        if (p == null) { info.text = "Žádná tiskárna."; return }
+        val st = Statuses.get(this, p.id)
         thread {
             while (running) {
                 try {
-                    stream(ip, code)
+                    if (p.isBambu) bambu(p.camHost(st), p.accessCode) else klipper(p)
                 } catch (e: Exception) {
                     if (!running) break
                     runOnUiThread {
                         info.visibility = TextView.VISIBLE
                         info.text = "Kamera nejde připojit\n(${e.message ?: e.javaClass.simpleName})\n\n" +
-                            "• Musíš být na stejné Wi-Fi jako tiskárna (IP $ip)\n" +
-                            "• Na tiskárně musí být v Nastavení zapnutý LAN Only / Developer mód, jinak Bambu kameru pro jiné appky blokuje\n\n" +
-                            "Zkouším znovu…"
+                            "• Telefon musí být na stejné Wi-Fi jako tiskárna\n" +
+                            (if (p.isBambu) "• U Bambu musí být na tiskárně zapnutý LAN Only / Developer mód, jinak kameru cizím appkám blokuje\n" else "") +
+                            "\nZkouším znovu…"
                     }
                     try { Thread.sleep(4000) } catch (_: InterruptedException) {}
                 }
@@ -70,21 +61,22 @@ class CameraActivity : Activity() {
         }
     }
 
-    private fun stream(ip: String, code: String) {
+    private fun show(b: android.graphics.Bitmap) = runOnUiThread { img.setImageBitmap(b); info.visibility = TextView.GONE }
+
+    private fun bambu(ip: String, code: String) {
+        if (ip.isEmpty()) throw Exception("neznám IP adresu tiskárny – vyplň ji v detailu tiskárny")
         val s = Tls.trustAll().socketFactory.createSocket() as SSLSocket
         sock = s
         try {
             s.connect(InetSocketAddress(ip, 6000), 6000)
             s.soTimeout = 15000
             s.startHandshake()
-
             val auth = ByteBuffer.allocate(80).order(ByteOrder.LITTLE_ENDIAN)
             auth.putInt(0x40).putInt(0x3000).putInt(0).putInt(0)
             auth.put("bblp".toByteArray().copyOf(32))
             auth.put(code.toByteArray().copyOf(32))
             s.outputStream.write(auth.array())
             s.outputStream.flush()
-
             val input = DataInputStream(BufferedInputStream(s.inputStream))
             val hdr = ByteArray(16)
             while (running) {
@@ -93,14 +85,34 @@ class CameraActivity : Activity() {
                 if (size <= 0 || size > 8_000_000) throw Exception("neplatná data z kamery")
                 val jpg = ByteArray(size)
                 input.readFully(jpg)
-                val bmp = BitmapFactory.decodeByteArray(jpg, 0, size) ?: continue
-                runOnUiThread {
-                    img.setImageBitmap(bmp)
-                    info.visibility = TextView.GONE
-                }
+                BitmapFactory.decodeByteArray(jpg, 0, size)?.let { show(it) }
             }
-        } finally {
-            try { s.close() } catch (_: Exception) {}
+        } finally { try { s.close() } catch (_: Exception) {} }
+    }
+
+    /** Klipper: najde adresu snímku webkamery a opakovaně ji načítá. */
+    private fun klipper(p: PrinterCfg) {
+        val hostOnly = "http://" + Http.hostOnly(p.host)
+        val urls = mutableListOf<String>()
+        try {
+            val r = Http.request(p, "GET", "/server/webcams/list")
+            val cams = JSONObject(r.body).optJSONObject("result")?.optJSONArray("webcams")
+            if (cams != null) for (i in 0 until cams.length()) {
+                val u = cams.optJSONObject(i)?.optString("snapshot_url", "") ?: ""
+                if (u.isNotEmpty()) urls += if (u.startsWith("http")) u else hostOnly + (if (u.startsWith("/")) u else "/$u")
+            }
+        } catch (_: Exception) {}
+        urls += "$hostOnly/webcam/?action=snapshot"
+        urls += "$hostOnly:8080/?action=snapshot"   // Creality K1
+        var url: String? = null
+        for (u in urls) {
+            if (Http.image(p, u, 1600) != null) { url = u; break }
+        }
+        if (url == null) throw Exception("webkamera nenalezena")
+        while (running) {
+            val b = Http.image(p, url, 1600) ?: throw Exception("kamera přestala odpovídat")
+            show(b)
+            Thread.sleep(400)
         }
     }
 

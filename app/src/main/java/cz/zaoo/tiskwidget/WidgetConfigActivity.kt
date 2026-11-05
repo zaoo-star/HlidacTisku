@@ -1,204 +1,142 @@
 package cz.zaoo.tiskwidget
 
-import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.content.Intent
-import android.graphics.Color
-import android.graphics.Typeface
+import android.content.res.ColorStateList
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.widget.Button
-import android.widget.FrameLayout
-import android.widget.ImageView
 import android.view.Gravity
 import android.view.View
+import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.RadioButton
-import android.widget.RadioGroup
-import android.widget.ScrollView
-import android.widget.Switch
-import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
+import com.google.android.material.materialswitch.MaterialSwitch
 
-/** Nastavení widgetu – otevře se podržením widgetu (Upravit) nebo z appky. */
-class WidgetConfigActivity : Activity() {
-    private var widgetId = AppWidgetManager.INVALID_APPWIDGET_ID
+/** Nastavení widgetu – otevře se podržením widgetu (Upravit) nebo z Nastavení. */
+class WidgetConfigActivity : AppCompatActivity() {
+    private var wid = AppWidgetManager.INVALID_APPWIDGET_ID
     private val values = mutableMapOf<String, Boolean>()
+    private var shape = "neon_auto"
+    private var theme = "neon"
+    private var printerId = ""
     private lateinit var preview: FrameLayout
-    private var shape = "rect"
-
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        widgetId = intent?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+        wid = intent?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
             ?: AppWidgetManager.INVALID_APPWIDGET_ID
-        // Kdyby uživatel odešel zpět, widget při přidávání zůstane s výchozím nastavením
-        setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId))
+        setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, wid))
 
-        WidgetOpts.ALL.forEach { values[it.key] = WidgetOpts.get(this, it.key) }
-        shape = WidgetOpts.shape(this)
+        WidgetOpts.ALL.forEach { values[it.key] = WidgetOpts.get(this, wid, it.key) }
+        shape = WidgetOpts.shape(this, wid)
+        theme = WidgetOpts.theme(this, wid)
+        val printers = Printers.all(this)
+        printerId = WidgetOpts.printer(this, wid).takeIf { id -> printers.any { it.id == id } } ?: printers.firstOrNull()?.id ?: ""
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(18), dp(18), dp(30))
-        }
-        root.addView(TextView(this).apply {
-            text = "Co má widget ukazovat"
-            textSize = 22f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.WHITE)
-        })
-        root.addView(TextView(this).apply {
-            text = "Náhled:"
-            setTextColor(0xFFAAAAAA.toInt())
-            setPadding(0, dp(12), 0, dp(6))
-        })
-        preview = FrameLayout(this).apply { setBackgroundColor(0xFF3A5A3A.toInt()); setPadding(dp(10), dp(10), dp(10), dp(10)) }
-        root.addView(preview, LinearLayout.LayoutParams(-1, -2))
+        val c = Ui.page(this, if (wid >= 0) "Upravit widget" else "Výchozí vzhled widgetu", true)
 
-        // --- Tiskárna: náhled modelu, AMS, historie, budík ---
-        val store = Store(this)
-        fun header(t: String) = TextView(this).apply {
-            text = t
-            textSize = 17f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.WHITE)
-            setPadding(0, dp(16), 0, dp(4))
-        }
-        fun button(t: String, onClick: () -> Unit) = Button(this).apply {
-            text = t
-            isAllCaps = false
-            setOnClickListener { onClick() }
-        }
-        root.addView(header("Tiskárna"))
-        val cover = Cover.load(this, 600)
-        if (cover != null && store.coverName.isNotEmpty()) {
-            root.addView(ImageView(this).apply {
-                setImageBitmap(cover)
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                setBackgroundColor(0xFF22262A.toInt())
-            }, LinearLayout.LayoutParams(-1, dp(160)))
-            root.addView(TextView(this).apply {
-                text = store.coverName
-                setTextColor(0xFFAAAAAA.toInt())
-                textSize = 13f
-                gravity = Gravity.CENTER
-            })
-        } else {
-            root.addView(TextView(this).apply {
-                text = "Náhled modelu se objeví po začátku dalšího tisku (jen s přihlášením přes Bambu účet)."
-                setTextColor(0xFFAAAAAA.toInt())
-                textSize = 13f
-            })
-        }
-        val trays = Ams.trays(store)
-        if (trays.isNotEmpty()) {
-            root.addView(header("AMS"))
-            val amsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            Ams.fillRow(this, amsRow, trays)
-            root.addView(amsRow)
-        }
-        root.addView(button("📊 Historie tisků a nacenění") { startActivity(Intent(this, HistoryActivity::class.java)) })
-        root.addView(Switch(this).apply {
-            text = "⏰ Hlasitý budík, když tisk skončí"
-            textSize = 16f
-            setTextColor(Color.WHITE)
-            isChecked = store.alarmOn
-            setPadding(0, dp(10), 0, dp(4))
-            setOnCheckedChangeListener { _, c -> store.alarmOn = c }
-        })
-        root.addView(button("Vyzkoušet budík (5 s)") {
-            Alarm.start(this)
-            preview.postDelayed({ Alarm.stop() }, 5000)
-        })
-        root.addView(button("🎛 Ovládání, kamera a připojení") { startActivity(Intent(this, MainActivity::class.java)) })
-
-        root.addView(TextView(this).apply {
-            text = "Tvar"
-            textSize = 17f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.WHITE)
-            setPadding(0, dp(16), 0, dp(2))
-        })
-        val rg = RadioGroup(this)
-        WidgetOpts.SHAPES.forEach { (key, label, _) ->
-            val rb = RadioButton(this).apply {
-                id = View.generateViewId()
-                text = label
-                textSize = 16f
-                setTextColor(Color.WHITE)
-                tag = key
+        // Náhled na „ploše“
+        preview = FrameLayout(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF2E4A34.toInt(), 0xFF1D2F3A.toInt())).apply {
+                cornerRadius = Ui.dpf(this@WidgetConfigActivity, 22f)
             }
-            rg.addView(rb)
-            if (key == shape) rb.isChecked = true
+            val pd = Ui.dp(this@WidgetConfigActivity, 14)
+            setPadding(pd, pd, pd, pd)
+            minimumHeight = Ui.dp(this@WidgetConfigActivity, 150)
         }
-        rg.setOnCheckedChangeListener { g, id ->
-            shape = g.findViewById<RadioButton>(id)?.tag as? String ?: "rect"
-            updatePreview()
-        }
-        root.addView(rg)
-        root.addView(TextView(this).apply {
-            text = "Co ukazovat"
-            textSize = 17f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.WHITE)
-            setPadding(0, dp(16), 0, dp(2))
+        c.addView(preview, Ui.lp(this, 4, 4))
+        c.addView(Ui.text(this, "Widget se sám přizpůsobí velikosti na ploše – písmo i počet řádků. Velikost změníš podržením widgetu a tažením za okraje.", 12f, Ui.GREY).apply {
+            setPadding(Ui.dp(this@WidgetConfigActivity, 4), Ui.dp(this@WidgetConfigActivity, 4), 0, 0)
         })
 
+        if (printers.size > 1) {
+            c.addView(Ui.section(this, "Tiskárna"))
+            c.addView(chips(printers.map { it.id to it.name }, printerId, null) { printerId = it; updatePreview() })
+        }
+        c.addView(Ui.section(this, "Tvar"))
+        c.addView(chips(WidgetOpts.SHAPES.map { it.first to it.second }, shape, null) { shape = it; updatePreview() })
+        c.addView(Ui.section(this, "Barvy"))
+        c.addView(chips(Themes.ALL.map { it.key to it.label }, theme, Themes.ALL.associate { it.key to it.a }) { theme = it; updatePreview() })
+        c.addView(Ui.text(this, "Barvy se projeví hlavně u futuristického vzhledu; u klasického barví průběh.", 12f, Ui.GREY).apply {
+            setPadding(Ui.dp(this@WidgetConfigActivity, 4), Ui.dp(this@WidgetConfigActivity, 6), 0, 0)
+        })
+
+        c.addView(Ui.section(this, "Co ukazovat"))
+        val (oc, oi) = Ui.card(this, 8)
         WidgetOpts.ALL.forEach { o ->
-            root.addView(Switch(this).apply {
+            oi.addView(MaterialSwitch(this).apply {
                 text = o.label
                 textSize = 16f
-                setTextColor(Color.WHITE)
+                setTextColor(Ui.TEXT)
                 isChecked = values[o.key] == true
-                setPadding(0, dp(10), 0, dp(10))
-                setOnCheckedChangeListener { _, c -> values[o.key] = c; updatePreview() }
+                setPadding(Ui.dp(this@WidgetConfigActivity, 10), Ui.dp(this@WidgetConfigActivity, 4), Ui.dp(this@WidgetConfigActivity, 6), Ui.dp(this@WidgetConfigActivity, 4))
+                setOnCheckedChangeListener { _, ch -> values[o.key] = ch; updatePreview() }
             })
         }
-        root.addView(TextView(this).apply {
-            text = "Po změně tvaru uprav i velikost na ploše: podrž widget a táhni za okraje Widget se přizpůsobí sám: písmo i počet řádků podle velikosti. U „automaticky“ se podle tvaru na ploše vybere i rozložení (čtvercový → kruh, široký → panel)."
-            setTextColor(0xFFAAAAAA.toInt())
-            textSize = 13f
-            setPadding(0, dp(12), 0, dp(12))
+        c.addView(oc, Ui.lp(this, 0, 16))
+        c.addView(Ui.button(this, "Uložit") { save() }, Ui.lp(this, 0, 8))
+        if (printerId.isNotEmpty()) c.addView(Ui.button(this, "Otevřít tiskárnu (stav, ovládání, AMS, historie)", "text") {
+            startActivity(Intent(this, PrinterActivity::class.java).putExtra("id", printerId))
         })
-        root.addView(Button(this).apply {
-            text = "Uložit"
-            isAllCaps = false
-            setOnClickListener { save() }
-        })
-
-        setContentView(ScrollView(this).apply { addView(root); setBackgroundColor(0xFF121416.toInt()) })
         updatePreview()
+    }
+
+    private fun chips(items: List<Pair<String, String>>, selected: String, dots: Map<String, Int>?, onPick: (String) -> Unit): ChipGroup {
+        val g = ChipGroup(this).apply { isSingleSelection = true; isSelectionRequired = true }
+        for ((key, label) in items) {
+            val chip = Chip(this).apply {
+                id = View.generateViewId()
+                text = label
+                isCheckable = true
+                isCheckedIconVisible = false
+                tag = key
+                chipBackgroundColor = ColorStateList(
+                    arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+                    intArrayOf(0xFF0B3D22.toInt(), Ui.SURFACE2))
+                setTextColor(Ui.TEXT)
+                chipStrokeWidth = 0f
+                dots?.get(key)?.let { col ->
+                    chipIcon = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(col) }
+                    isChipIconVisible = true
+                }
+            }
+            g.addView(chip)
+            if (key == selected) chip.isChecked = true
+        }
+        g.setOnCheckedStateChangeListener { grp, ids ->
+            val ch = ids.firstOrNull()?.let { grp.findViewById<Chip>(it) } ?: return@setOnCheckedStateChangeListener
+            onPick(ch.tag as String)
+        }
+        return g
     }
 
     private fun updatePreview() {
         preview.removeAllViews()
         try {
             val sh = PrintWidget.resolve(shape, 0, 0)
-            val round = sh == "square" || sh == "circle" || sh == "neon_ring"
             val (pw, ph) = when (sh) {
-                "neon_panel" -> 320 to 110; "neon_ring" -> 170 to 170
-                "rect" -> 320 to 84; "strip" -> 320 to 48; else -> 150 to 150
+                "neon_panel" -> 320 to 110; "neon_ring" -> 170 to 170; "rect" -> 320 to 84
+                "strip" -> 320 to 48; else -> 150 to 150
             }
-            val rv = PrintWidget.build(this, { values[it] ?: true }, sh, if (round) 150 else 0, pw, ph)
+            val p = Printers.get(this, printerId)
+            val rv = PrintWidget.build(this, p, { values[it] ?: true }, sh, theme, pw, ph)
             val view = rv.apply(this, preview)
             view.setOnClickListener(null)
-            val lp = when (sh) {
-                "square", "circle" -> FrameLayout.LayoutParams(dp(150), dp(150))
-                "neon_ring" -> FrameLayout.LayoutParams(dp(170), dp(170))
-                "neon_panel" -> FrameLayout.LayoutParams(dp(320), dp(110))
-                "strip" -> FrameLayout.LayoutParams(-1, dp(48))
-                else -> FrameLayout.LayoutParams(-1, dp(84))
-            }
+            val lp = FrameLayout.LayoutParams(Ui.dp(this, pw), Ui.dp(this, ph))
             lp.gravity = Gravity.CENTER
             preview.addView(view, lp)
         } catch (_: Exception) {}
     }
 
     private fun save() {
-        values.forEach { (k, v) -> WidgetOpts.set(this, k, v) }
-        WidgetOpts.setShape(this, shape)
+        values.forEach { (k, v) -> WidgetOpts.set(this, wid, k, v) }
+        WidgetOpts.setShape(this, wid, shape)
+        WidgetOpts.setTheme(this, wid, theme)
+        if (wid >= 0 && printerId.isNotEmpty()) WidgetOpts.setPrinter(this, wid, printerId)
         PrintWidget.render(this)
-        setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId))
+        setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, wid))
         finish()
     }
 }

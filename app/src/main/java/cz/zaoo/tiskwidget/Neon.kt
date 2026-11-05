@@ -27,6 +27,7 @@ object Neon {
         val a: Int,          // barva začátku průběhu
         val b: Int,          // barva konce průběhu
         val light: Boolean,
+        val theme: Themes.T = Themes.ALL[0],
     )
 
     /** Jeden údaj, volitelně s barevnou tečkou (filament). */
@@ -167,13 +168,19 @@ object Neon {
     }
 
     /** Pozadí ve stylu HUD: tmavý přechod, jemné řádky, tenký rámeček a rohové závorky. */
-    private fun hudFrame(c: Canvas, W: Float, H: Float, rad: Float, light: Boolean, accent: Int) {
+    private fun hudFrame(c: Canvas, W: Float, H: Float, rad: Float, light: Boolean, accent: Int, t: Themes.T) {
         val r = RectF(1f, 1f, W - 1, H - 1)
         val a = if (light) 150 else 235
         val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            shader = LinearGradient(0f, 0f, 0f, H, Color.argb(a, 14, 22, 36), Color.argb(a, 4, 7, 12), Shader.TileMode.CLAMP)
+            shader = LinearGradient(0f, 0f, 0f, H, alpha(t.bgTop, a), alpha(t.bgBot, a), Shader.TileMode.CLAMP)
         }
         c.drawRoundRect(r, rad, rad, bg)
+        if (!t.hud) {
+            // Minimal: jen jemný rámeček
+            val border = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.5f; color = alpha(accent, 40) }
+            c.drawRoundRect(r, rad, rad, border)
+            return
+        }
         c.save()
         val clip = android.graphics.Path().apply { addRoundRect(r, rad, rad, android.graphics.Path.Direction.CW) }
         c.clipPath(clip)
@@ -207,7 +214,7 @@ object Neon {
         val h = H.toFloat()
         // u = „jednotka“ velikosti: u nízkého panelu výška, u vysokého (4×2) podle šířky
         val u = min(h, w / 2.6f)
-        hudFrame(c, w, h, u * 0.24f, d.light, d.a)
+        hudFrame(c, w, h, u * 0.24f, d.light, d.a, d.theme)
 
         val R = u * 0.36f
         val cx = u * 0.52f
@@ -228,7 +235,7 @@ object Neon {
         var tsz = u * 0.33f
         val tp = textPaint(orb, tsz, Color.WHITE, alpha(d.a, 220), u * 0.05f)
         while (tp.measureText(d.time) > w - x - u * 0.15f && tsz > u * 0.12f) { tsz *= 0.92f; tp.textSize = tsz }
-        val ip = textPaint(raj, u * 0.13f, INFO)
+        val ip = textPaint(raj, u * 0.13f, d.theme.info)
 
         // kolik řádků údajů se vejde na výšku (víc u 4×2)
         val lineH = ip.textSize * 1.3f
@@ -262,7 +269,7 @@ object Neon {
         val a = if (d.light) 150 else 235
 
         val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            shader = RadialGradient(cx, cy, S / 2, Color.argb(a, 14, 24, 38), Color.argb(a, 4, 7, 12), Shader.TileMode.CLAMP)
+            shader = RadialGradient(cx, cy, S / 2, alpha(d.theme.bgTop, a), alpha(d.theme.bgBot, a), Shader.TileMode.CLAMP)
         }
         c.drawCircle(cx, cy, S / 2 - 1, bg)
         val outer = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f; color = alpha(d.a, 70) }
@@ -270,7 +277,7 @@ object Neon {
 
         // ryski jako na ciferníku
         val tick = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = maxOf(1.5f, S * 0.006f) }
-        for (k in 0 until 60) {
+        if (d.theme.hud) for (k in 0 until 60) {
             val ang = Math.toRadians(k * 6.0 - 90)
             val r1 = S * 0.47f
             val r2 = S * if (k % 5 == 0) 0.43f else 0.445f
@@ -295,7 +302,7 @@ object Neon {
             val pp = textPaint(orbMid, S * 0.07f, d.b).apply { textAlign = Paint.Align.CENTER }
             drawMid(c, "${d.pct} %", cx, cy + S * 0.12f, pp)
         }
-        val ip = textPaint(raj, S * 0.06f, INFO)
+        val ip = textPaint(raj, S * 0.06f, d.theme.info)
         val lines = pack(d.parts, ip, maxW, 2)
         lines.forEachIndexed { li, line -> drawLine(c, line, cx, cy + S * (0.2f + 0.07f * li), ip, true) }
         // kamera v pravém dolním rohu widgetu (tam je i klikací plocha)

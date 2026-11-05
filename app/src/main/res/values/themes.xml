@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Hlidac" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">#00D26A</item>
+        <item name="colorOnPrimary">#00210C</item>
+        <item name="colorPrimaryContainer">#0B3D22</item>
+        <item name="colorOnPrimaryContainer">#9CF5BF</item>
+        <item name="colorSecondary">#00E5FF</item>
+        <item name="colorSurface">#14181C</item>
+        <item name="colorOnSurface">#E8EDF2</item>
+        <item name="colorSurfaceContainer">#1A1F24</item>
+        <item name="colorSurfaceContainerHigh">#20262C</item>
+        <item name="colorOutline">#3A444E</item>
+        <item name="android:colorBackground">#0F1215</item>
+        <item name="android:windowBackground">#0F1215</item>
+        <item name="android:statusBarColor">#0F1215</item>
+        <item name="android:navigationBarColor">#0F1215</item>
+    </style>
+</resources>

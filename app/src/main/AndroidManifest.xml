@@ -12,8 +12,8 @@
     <application
         android:allowBackup="false"
         android:icon="@drawable/ic_launcher"
-        android:label="Tisk P1S"
-        android:theme="@android:style/Theme.Material">
+        android:label="Hlídač tisku"
+        android:theme="@style/Theme.Hlidac">
 
         <activity
             android:name=".MainActivity"
@@ -52,7 +52,7 @@
         <receiver
             android:name=".PrintWidget"
             android:exported="true"
-            android:label="Tisk P1S">
+            android:label="Hlídač tisku">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
@@ -67,8 +67,21 @@
 
         <activity
             android:name=".HistoryActivity"
+            android:exported="false" />
+        <activity
+            android:name=".PrinterActivity"
+            android:exported="false" />
+        <activity
+            android:name=".AddPrinterActivity"
             android:exported="false"
-            android:label="Historie tisků" />
+            android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false" />
+
+        <receiver
+            android:name=".PinReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".BootReceiver"

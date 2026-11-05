@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="widget_desc">Zbývající čas tisku na Bambu P1S</string>
+    <string name="widget_desc">Průběh a zbývající čas tisku (Bambu, Prusa, Klipper)</string>
 </resources>

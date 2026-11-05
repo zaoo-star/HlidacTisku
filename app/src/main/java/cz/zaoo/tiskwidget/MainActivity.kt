@@ -1,14 +1,8 @@
 package cz.zaoo.tiskwidget
 
 import android.Manifest
-import android.app.Activity
-import android.appwidget.AppWidgetManager
-import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -16,364 +10,206 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
-import android.text.InputType
-import android.view.View
-import android.widget.Button
-import android.widget.EditText
+import android.view.Gravity
+import android.view.MenuItem
+import android.widget.FrameLayout
 import android.widget.ImageView
-import android.widget.Switch
 import android.widget.LinearLayout
-import android.widget.RadioButton
-import android.widget.RadioGroup
-import android.widget.ScrollView
 import android.widget.TextView
-import kotlin.concurrent.thread
+import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.card.MaterialCardView
+import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+import com.google.android.material.progressindicator.LinearProgressIndicator
 
-class MainActivity : Activity() {
-    private lateinit var store: Store
+/** Přehled všech tiskáren jako karty. */
+class MainActivity : AppCompatActivity() {
     private val h = Handler(Looper.getMainLooper())
-
-    private lateinit var status: TextView
-    private lateinit var msg: TextView
-    private lateinit var camBtn: Button
-    private lateinit var ctrlMsg: TextView
-    private lateinit var cover: ImageView
-    private lateinit var amsBox: LinearLayout
-    private lateinit var amsTitle: TextView
-    private var shownCover = "-"
-    private var shownAms = "-"
-    private lateinit var lightBtn: Button
-    private lateinit var cloudBox: LinearLayout
-    private lateinit var lanBox: LinearLayout
-    private lateinit var codeBox: LinearLayout
-    private lateinit var email: EditText
-    private lateinit var pass: EditText
-    private lateinit var code: EditText
-    private lateinit var camIp: EditText
-    private lateinit var lanIp: EditText
-    private lateinit var lanSn: EditText
-    private lateinit var lanCode: EditText
-    private var tfaKey: String? = null
+    private lateinit var content: LinearLayout
+    private lateinit var list: LinearLayout
+    private lateinit var tips: LinearLayout
+    private var shownIds = ""
+    private val holders = HashMap<String, Holder>()
 
     private val tick = object : Runnable {
         override fun run() { refresh(); h.postDelayed(this, 2000) }
     }
 
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+    /** Karta jedné tiskárny – při obnově se jen přepíšou texty. */
+    private inner class Holder(val p: PrinterCfg) {
+        val card: MaterialCardView
+        val thumb: ImageView = Ui.thumb(this@MainActivity, 64)
+        val initial = Ui.text(this@MainActivity, p.brand.take(1), 26f, Ui.MUTED, true).apply { gravity = Gravity.CENTER }
+        val name = Ui.text(this@MainActivity, p.name, 18f, Ui.TEXT, true)
+        val sub = Ui.text(this@MainActivity, "", 13f, Ui.MUTED)
+        val state = Ui.pill(this@MainActivity, "", Ui.GREY)
+        val time = Ui.text(this@MainActivity, "", 30f, Ui.TEXT, true)
+        val pct = Ui.text(this@MainActivity, "", 18f, Ui.MUTED, true)
+        val bar: LinearProgressIndicator = Ui.progress(this@MainActivity)
+        val info = Ui.text(this@MainActivity, "", 13f, Ui.MUTED)
+        var coverKey = "-"
 
-    private fun tv(text: String, size: Float = 15f, bold: Boolean = false, color: Int = Color.WHITE) =
-        TextView(this).apply {
-            this.text = text
-            textSize = size
-            setTextColor(color)
-            if (bold) typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, dp(6), 0, dp(6))
+        init {
+            val ctx = this@MainActivity
+            val (c, inner) = Ui.card(ctx, 16)
+            card = c
+            val top = Ui.hbox(ctx)
+            val tf = FrameLayout(ctx)
+            tf.addView(thumb)
+            tf.addView(initial, FrameLayout.LayoutParams(Ui.dp(ctx, 64), Ui.dp(ctx, 64)))
+            top.addView(tf)
+            val col = Ui.vbox(ctx).apply { setPadding(Ui.dp(ctx, 14), 0, 0, 0) }
+            col.addView(name)
+            col.addView(sub)
+            col.addView(state, LinearLayout.LayoutParams(-2, -2).apply { topMargin = Ui.dp(ctx, 6) })
+            top.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
+            inner.addView(top)
+            val row = Ui.hbox(ctx).apply { gravity = Gravity.BOTTOM }
+            row.addView(time, LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(pct)
+            inner.addView(row, Ui.lp(ctx, 12, 6))
+            inner.addView(bar, Ui.lp(ctx, 0, 8))
+            inner.addView(info)
+            card.setOnClickListener { startActivity(Intent(ctx, PrinterActivity::class.java).putExtra("id", p.id)) }
         }
 
-    private fun et(hint: String, value: String, type: Int = InputType.TYPE_CLASS_TEXT) =
-        EditText(this).apply {
-            this.hint = hint
-            setText(value)
-            inputType = type
-            setSingleLine()
+        fun update() {
+            val ctx = this@MainActivity
+            val s = Statuses.get(ctx, p.id)
+            val v = Fmt.view(s)
+            val col = Ui.stateColor(s)
+            sub.text = "${p.brand} · ${p.connLabel}"
+            state.text = when {
+                s.hasError -> Fmt.errText(s).removePrefix("⚠ ")
+                s.state.isEmpty() && s.error.isNotEmpty() -> "Nepřipojeno"
+                s.state.isEmpty() -> "Připojuji…"
+                !s.connected -> Fmt.stateCz(s.state) + " · offline"
+                else -> Fmt.stateCz(s.state)
+            }
+            state.setTextColor(col)
+            (state.background as? android.graphics.drawable.GradientDrawable)?.setColor(
+                android.graphics.Color.argb(40, android.graphics.Color.red(col), android.graphics.Color.green(col), android.graphics.Color.blue(col)))
+            if (s.active) {
+                time.text = Fmt.remain(v.remain)
+                pct.text = "${s.pct} %"
+                bar.setIndicatorColor(col)
+                bar.progress = s.pct
+                Ui.gone(bar, false)
+                val parts = mutableListOf("hotovo v ${Fmt.eta(v)}")
+                if (s.name.isNotEmpty()) parts.add(0, s.name)
+                parts += Fmt.temps(s)
+                info.text = parts.joinToString("  ·  ")
+            } else {
+                time.text = when (s.state) { "FINISH" -> "Hotovo ✅"; "FAILED" -> "Skončil"; "IDLE" -> "Volná"; else -> "—" }
+                pct.text = ""
+                Ui.gone(bar, s.state != "FINISH")
+                bar.progress = 100
+                bar.setIndicatorColor(col)
+                info.text = when {
+                    s.error.isNotEmpty() -> s.error
+                    s.state.isNotEmpty() -> Fmt.temps(s) + (if (s.name.isNotEmpty() && s.state == "FINISH") "  ·  ${s.name}" else "")
+                    else -> ""
+                }
+            }
+            val key = if (Cover.valid(s) && (s.active || s.state == "FINISH")) s.coverKey else ""
+            if (key != coverKey) {
+                coverKey = key
+                val b = if (key.isNotEmpty()) Cover.load(ctx, p.id, 256) else null
+                thumb.setImageBitmap(b)
+                Ui.gone(initial, b != null)
+            }
         }
-
-    private fun btn(text: String, onClick: () -> Unit) = Button(this).apply {
-        this.text = text
-        isAllCaps = false
-        setOnClickListener { onClick() }
     }
-
-    private fun box() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        store = Store(this)
-
-        val root = box().apply { setPadding(dp(18), dp(18), dp(18), dp(40)) }
-
-        root.addView(tv("🖨 Tisk P1S", 24f, true))
-        cover = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            visibility = View.GONE
-            background = GradientDrawable().apply { cornerRadius = dp(14).toFloat(); setColor(0xFF22262A.toInt()) }
-            setPadding(dp(6), dp(6), dp(6), dp(6))
+        Store(this).migrate(this)
+        content = Ui.page(this, "Hlídač tisku", false) {
+            menu.add(0, 1, 0, "Nastavení").setIcon(R.drawable.ic_settings)
+                .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            setOnMenuItemClickListener { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)); true }
         }
-        root.addView(cover, LinearLayout.LayoutParams(-1, dp(180)).apply { bottomMargin = dp(8) })
-        status = tv("", 16f).apply {
-            background = GradientDrawable().apply { cornerRadius = dp(14).toFloat(); setColor(0xFF22262A.toInt()) }
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-        }
-        root.addView(status)
-        camBtn = btn("📷 Otevřít kameru") { startActivity(Intent(this, CameraActivity::class.java)) }
-        root.addView(camBtn)
+        tips = Ui.vbox(this)
+        content.addView(tips)
+        list = Ui.vbox(this)
+        content.addView(list)
 
-        // --- AMS ---
-        amsTitle = tv("AMS", 18f, true).apply { setPadding(0, dp(14), 0, dp(4)); visibility = View.GONE }
-        root.addView(amsTitle)
-        amsBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        root.addView(amsBox)
-
-        // --- Ovládání ---
-        root.addView(tv("Ovládání", 18f, true).apply { setPadding(0, dp(14), 0, dp(2)) })
-        fun row(vararg b: Button) = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            b.forEach { addView(it, LinearLayout.LayoutParams(0, -2, 1f)) }
+        val fab = ExtendedFloatingActionButton(this).apply {
+            text = "Přidat tiskárnu"
+            setIconResource(R.drawable.ic_add)
+            setOnClickListener { startActivity(Intent(this@MainActivity, AddPrinterActivity::class.java)) }
         }
-        lightBtn = btn("💡 Světlo") {
-            MonitorService.command(this, if (Fmt.info(store).lightOn == true) "light_off" else "light_on")
-        }
-        root.addView(row(
-            lightBtn,
-            btn("⏸ Pauza") { MonitorService.command(this, "pause") },
-        ))
-        root.addView(row(
-            btn("▶ Pokračovat") { MonitorService.command(this, "resume") },
-            btn("⏹ Zastavit") {
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("Zastavit tisk?")
-                    .setMessage("Tisk se ukončí a nepůjde v něm pokračovat.")
-                    .setPositiveButton("Zastavit") { _, _ -> MonitorService.command(this, "stop") }
-                    .setNegativeButton("Zrušit", null)
-                    .show()
-            },
-        ))
-        ctrlMsg = tv("", 13f, color = 0xFFAAAAAA.toInt())
-        root.addView(ctrlMsg)
-
-        // --- Historie a budík ---
-        root.addView(btn("📊 Historie tisků a nacenění") { startActivity(Intent(this, HistoryActivity::class.java)) })
-        root.addView(Switch(this).apply {
-            text = "⏰ Hlasitý budík, když tisk skončí (zvoní i v tichém režimu)"
-            textSize = 15f
-            setTextColor(Color.WHITE)
-            isChecked = store.alarmOn
-            setPadding(0, dp(10), 0, dp(4))
-            setOnCheckedChangeListener { _, c -> store.alarmOn = c }
+        Ui.frameOf(content).addView(fab, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
+            setMargins(0, 0, Ui.dp(this@MainActivity, 20), Ui.dp(this@MainActivity, 28))
         })
-        root.addView(btn("Vyzkoušet budík (5 s)") {
-            Alarm.start(this)
-            h.postDelayed({ Alarm.stop() }, 5000)
-        })
-
-        msg = tv("", 14f, color = 0xFFFFC857.toInt())
-        root.addView(msg)
-
-        root.addView(tv("Připojení", 18f, true).apply { setPadding(0, dp(18), 0, dp(4)) })
-        val rCloud = RadioButton(this).apply { id = View.generateViewId(); text = "Přes Bambu účet – funguje všude, Handy zůstane"; setTextColor(Color.WHITE) }
-        val rLan = RadioButton(this).apply { id = View.generateViewId(); text = "Jen doma přes Wi-Fi (IP + přístupový kód)"; setTextColor(Color.WHITE) }
-        val rg = RadioGroup(this).apply { addView(rCloud); addView(rLan) }
-        root.addView(rg)
-
-        // --- Bambu účet ---
-        cloudBox = box()
-        email = et("E-mail k Bambu účtu (u Google tvůj Gmail)",store.email, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
-        pass = et("Heslo (u Google nech prázdné)", "", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
-        cloudBox.addView(email)
-        cloudBox.addView(pass)
-        cloudBox.addView(btn("Přihlásit heslem") { doLogin() })
-        cloudBox.addView(btn("Přihlašuju se přes Google → poslat kód na e-mail") { doEmailCode() })
-        codeBox = box().apply { visibility = View.GONE }
-        code = et("Kód z e-mailu", "", InputType.TYPE_CLASS_NUMBER)
-        codeBox.addView(code)
-        codeBox.addView(btn("Ověřit kód") { doCode() })
-        cloudBox.addView(codeBox)
-        cloudBox.addView(tv("IP tiskárny doma (jen pro kameru, většinou se vyplní sama):", 13f, color = 0xFFAAAAAA.toInt()))
-        camIp = et("např. 192.168.1.50", store.ip)
-        cloudBox.addView(camIp)
-        cloudBox.addView(btn("Uložit IP") {
-            store.ip = camIp.text.toString().trim()
-            say("Uloženo.")
-            PrintWidget.render(this)
-        })
-        root.addView(cloudBox)
-
-        // --- LAN ---
-        lanBox = box()
-        lanBox.addView(tv("Údaje najdeš na displeji tiskárny: Nastavení → WLAN (IP a přístupový kód), Nastavení → Zařízení (sériové číslo).", 13f, color = 0xFFAAAAAA.toInt()))
-        lanIp = et("IP adresa (např. 192.168.1.50)", store.ip)
-        lanSn = et("Sériové číslo (např. 01P00A...)", if (store.mode == "lan") store.serial else "")
-        lanCode = et("Přístupový kód (8 znaků)", if (store.mode == "lan") store.accessCode else "")
-        lanBox.addView(lanIp)
-        lanBox.addView(lanSn)
-        lanBox.addView(lanCode)
-        lanBox.addView(btn("Uložit a připojit") { saveLan() })
-        root.addView(lanBox)
-
-        rg.setOnCheckedChangeListener { _, id ->
-            cloudBox.visibility = if (id == rCloud.id) View.VISIBLE else View.GONE
-            lanBox.visibility = if (id == rLan.id) View.VISIBLE else View.GONE
-        }
-        rg.check(if (store.mode == "lan") rLan.id else rCloud.id)
-
-        // --- Tipy ---
-        root.addView(tv("Aby widget běžel spolehlivě", 18f, true).apply { setPadding(0, dp(22), 0, dp(4)) })
-        root.addView(btn("🔋 Vypnout úsporu baterie pro tuhle appku") { askBattery() })
-        root.addView(btn("➕ Přidat widget na plochu") { pinWidget() })
-        root.addView(btn("🎨 Upravit, co widget ukazuje") { startActivity(Intent(this, WidgetConfigActivity::class.java)) })
-        root.addView(tv("Na Xiaomi / Redmi navíc: dlouze podrž ikonu appky → Informace o aplikaci → zapni Autostart a u Úspory baterie dej „Bez omezení“.", 13f, color = 0xFFAAAAAA.toInt()))
-        root.addView(btn("Odhlásit a zastavit sledování") { logout() })
-
-        setContentView(ScrollView(this).apply { addView(root); setBackgroundColor(0xFF121416.toInt()) })
 
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
-        if (store.configured) MonitorService.start(this)
     }
 
-    override fun onResume() { super.onResume(); h.post(tick) }
+    override fun onResume() {
+        super.onResume()
+        if (Alarm.ringing) Alarm.stop()
+        if (Printers.all(this).isNotEmpty()) MonitorService.start(this)
+        shownIds = "-"
+        h.post(tick)
+    }
+
     override fun onPause() { super.onPause(); h.removeCallbacks(tick) }
 
     private fun refresh() {
-        status.text = if (store.configured) {
-            (if (store.devName.isNotEmpty()) "${store.devName}\n" else "") + Fmt.longText(store)
-        } else "Nejdřív se připoj k tiskárně ↓"
-        camBtn.visibility = if (store.hasCamera) View.VISIBLE else View.GONE
-        ctrlMsg.text = store.cmdMsg
-        if (Alarm.ringing) Alarm.stop()  // otevření appky budík vypne
-
-        // Náhled modelu
-        val i = Fmt.info(store)
-        val coverKey = if (Fmt.active(i.state) || i.state == "FINISH") store.coverName else ""
-        if (coverKey != shownCover) {
-            shownCover = coverKey
-            val bmp = if (coverKey.isNotEmpty()) Cover.load(this, 600) else null
-            cover.setImageBitmap(bmp)
-            cover.visibility = if (bmp != null) View.VISIBLE else View.GONE
-        }
-
-        // AMS
-        val trays = Ams.trays(store)
-        val key = trays.toString()
-        if (key != shownAms) {
-            shownAms = key
-            amsTitle.visibility = if (trays.isEmpty()) View.GONE else View.VISIBLE
-            Ams.fillRow(this, amsBox, trays)
-        }
-        val l = Fmt.info(store).lightOn
-        lightBtn.text = when (l) { true -> "💡 Zhasnout"; false -> "💡 Rozsvítit"; null -> "💡 Světlo" }
-        if (camIp.text.isEmpty() && store.autoIp.isNotEmpty()) camIp.hint = "zjištěno: ${store.autoIp}"
-    }
-
-    private fun say(t: String) = runOnUiThread { msg.text = t }
-
-    private fun doLogin() {
-        val e = email.text.toString().trim()
-        val p = pass.text.toString()
-        if (e.isEmpty() || p.isEmpty()) { say("Vyplň e-mail i heslo."); return }
-        store.email = e
-        say("Přihlašuji…")
-        thread { handle(BambuCloud.login(e, p)) }
-    }
-
-    /** Účty založené přes Google nemají heslo – přihlásí se jednorázovým kódem z e-mailu. */
-    private fun doEmailCode() {
-        val e = email.text.toString().trim()
-        if (e.isEmpty()) { say("Vyplň e-mail, kterým se přihlašuješ přes Google (Gmail)."); return }
-        store.email = e
-        tfaKey = null
-        say("Posílám kód…")
-        thread {
-            BambuCloud.sendCode(e)
-            runOnUiThread { codeBox.visibility = View.VISIBLE; code.hint = "Kód z e-mailu" }
-            say("Bambu ti poslal kód na $e (mrkni i do spamu). Opiš ho sem a dej Ověřit kód.")
-        }
-    }
-
-    private fun doCode() {
-        val c = code.text.toString().trim()
-        if (c.isEmpty()) { say("Zadej kód."); return }
-        say("Ověřuji kód…")
-        val key = tfaKey
-        thread { handle(if (key != null) BambuCloud.loginTfa(key, c) else BambuCloud.loginWithCode(store.email, c)) }
-    }
-
-    private fun handle(r: BambuCloud.Login) {
-        when (r) {
-            is BambuCloud.Login.Ok -> finishLogin(r.token)
-            is BambuCloud.Login.NeedCode -> {
-                tfaKey = null
-                BambuCloud.sendCode(store.email)
-                runOnUiThread { codeBox.visibility = View.VISIBLE; code.hint = "Kód z e-mailu" }
-                say("Bambu ti poslal ověřovací kód na e-mail. Opiš ho sem.")
+        val all = Printers.all(this)
+        val ids = all.joinToString(",") { it.id + it.name }
+        if (ids != shownIds) {
+            shownIds = ids
+            list.removeAllViews()
+            holders.clear()
+            if (all.isEmpty()) list.addView(empty())
+            for (p in all) {
+                val hd = Holder(p)
+                holders[p.id] = hd
+                list.addView(hd.card, Ui.lp(this, 0, 12))
             }
-            is BambuCloud.Login.NeedTfa -> {
-                tfaKey = r.tfaKey
-                runOnUiThread { codeBox.visibility = View.VISIBLE; code.hint = "Kód z ověřovací aplikace" }
-                say("Máš zapnuté dvoufázové ověření – zadej kód z aplikace.")
-            }
-            is BambuCloud.Login.Err -> say(r.msg)
+            buildTips(all.isNotEmpty())
         }
+        holders.values.forEach { it.update() }
     }
 
-    private fun finishLogin(token: String) {
-        try {
-            val user = BambuCloud.username(token)
-            val devs = BambuCloud.devices(token)
-            if (devs.isEmpty()) { say("Na účtu není žádná tiskárna."); return }
-            val d = devs.firstOrNull { it.model.contains("P1S", true) } ?: devs.first()
-            store.mode = "cloud"
-            store.token = token
-            store.username = user
-            store.serial = d.serial
-            store.devName = d.name
-            store.accessCode = d.accessCode
-            store.clearState()
-            MonitorService.start(this, reconnect = true)
-            runOnUiThread {
-                codeBox.visibility = View.GONE
-                pass.setText("")
-                code.setText("")
-            }
-            say("✅ Přihlášeno – tiskárna ${d.name}. Teď si přidej widget na plochu.")
-        } catch (e: Exception) {
-            say("Přihlášení proběhlo, ale nepovedlo se načíst tiskárnu: ${e.message}")
-        }
+    private fun empty(): LinearLayout {
+        val (c, inner) = Ui.card(this, 24)
+        inner.gravity = Gravity.CENTER_HORIZONTAL
+        inner.addView(Ui.text(this, "🖨", 56f).apply { gravity = Gravity.CENTER })
+        inner.addView(Ui.text(this, "Zatím tu není žádná tiskárna", 20f, Ui.TEXT, true).apply { gravity = Gravity.CENTER })
+        inner.addView(Ui.text(this, "Přidej Bambu Lab, Prusu nebo tiskárnu s Klipperem (Creality K1, Elegoo, Sovol…). " +
+            "Uvidíš průběh tisku, zbývající čas a dostaneš upozornění, až bude hotovo.", 14f, Ui.MUTED).apply {
+            gravity = Gravity.CENTER; setPadding(0, Ui.dp(this@MainActivity, 8), 0, Ui.dp(this@MainActivity, 16))
+        })
+        inner.addView(Ui.button(this, "Přidat první tiskárnu") {
+            startActivity(Intent(this, AddPrinterActivity::class.java))
+        }, LinearLayout.LayoutParams(-1, -2))
+        return Ui.vbox(this).apply { addView(c, Ui.lp(this@MainActivity, 8, 0)) }
     }
 
-    private fun saveLan() {
-        val ip = lanIp.text.toString().trim()
-        val sn = lanSn.text.toString().trim().uppercase()
-        val c = lanCode.text.toString().trim()
-        if (ip.isEmpty() || sn.isEmpty() || c.isEmpty()) { say("Vyplň všechna tři pole."); return }
-        store.mode = "lan"
-        store.ip = ip
-        store.serial = sn
-        store.accessCode = c
-        store.devName = "P1S"
-        store.clearState()
-        MonitorService.start(this, reconnect = true)
-        say("Uloženo, připojuji se…")
-    }
-
-    private fun logout() {
-        MonitorService.stop(this)
-        store.mode = ""
-        store.token = ""
-        store.clearState()
-        Cover.clear(this, store)
-        PrintWidget.render(this)
-        say("Odhlášeno.")
-    }
-
-    private fun askBattery() {
+    /** Doporučení, aby hlídání běželo spolehlivě (zmizí, až je splněno). */
+    private fun buildTips(hasPrinters: Boolean) {
+        tips.removeAllViews()
+        if (!hasPrinters) return
         val pm = getSystemService(PowerManager::class.java)
-        if (pm.isIgnoringBatteryOptimizations(packageName)) { say("Úspora baterie už je vypnutá 👍"); return }
-        try {
-            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
-        } catch (_: Exception) {
-            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-        }
-    }
-
-    private fun pinWidget() {
-        val mgr = getSystemService(AppWidgetManager::class.java)
-        if (mgr.isRequestPinAppWidgetSupported) {
-            mgr.requestPinAppWidget(ComponentName(this, PrintWidget::class.java), null, null)
-        } else {
-            say("Dlouze podrž prázdné místo na ploše → Widgety → Tisk P1S.")
-        }
+        if (pm.isIgnoringBatteryOptimizations(packageName)) return
+        val (c, inner) = Ui.card(this, 16)
+        c.setCardBackgroundColor(0xFF2A2410.toInt())
+        inner.addView(Ui.text(this, "🔋 Aby hlídání běželo i na pozadí", 16f, Ui.AMBER, true))
+        inner.addView(Ui.text(this, "Telefon jinak appku uspí a widget se přestane aktualizovat.", 14f, Ui.TEXT).apply {
+            setPadding(0, Ui.dp(this@MainActivity, 4), 0, Ui.dp(this@MainActivity, 10))
+        })
+        inner.addView(Ui.button(this, "Povolit běh na pozadí") {
+            try {
+                startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+            } catch (_: Exception) {
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            }
+        }, LinearLayout.LayoutParams(-1, -2))
+        tips.addView(c, Ui.lp(this, 4, 12))
     }
 }
