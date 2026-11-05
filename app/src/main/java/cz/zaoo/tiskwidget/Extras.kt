@@ -252,3 +252,52 @@ object Alarm {
 
     val ringing get() = ringtone?.isPlaying == true
 }
+
+/** Rozložení údajů do řádků podle toho, kolik je místa (nejdůležitější první). */
+object Fit {
+    private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+
+    fun width(cs: CharSequence, size: Float, bold: Boolean = false): Float {
+        p.textSize = size
+        p.typeface = if (bold) android.graphics.Typeface.DEFAULT_BOLD else android.graphics.Typeface.DEFAULT
+        return p.measureText(cs.toString())
+    }
+
+    private fun cut(s: CharSequence, size: Float, maxW: Float): CharSequence {
+        if (s !is String) return s
+        var t = s
+        while (t.length > 1 && width("$t…", size) > maxW) t = t.dropLast(1)
+        return "$t…"
+    }
+
+    /** Vrátí řádky (max. maxLines), do kterých se údaje vejdou; co se nevejde, vynechá. */
+    fun pack(parts: List<CharSequence>, size: Float, maxW: Float, maxLines: Int, sep: String): List<List<CharSequence>> {
+        val lines = mutableListOf<MutableList<CharSequence>>()
+        val widths = mutableListOf<Float>()
+        val sw = width(sep, size)
+        for (raw in parts) {
+            var part = raw
+            var w = width(part, size)
+            if (w > maxW) {
+                if (lines.size >= maxLines) continue
+                part = cut(part, size, maxW); w = width(part, size)
+                if (w > maxW) continue
+            }
+            var placed = false
+            for (li in lines.indices) {
+                if (widths[li] + sw + w <= maxW) { lines[li].add(part); widths[li] += sw + w; placed = true; break }
+            }
+            if (!placed && lines.size < maxLines) { lines.add(mutableListOf(part)); widths.add(w) }
+        }
+        return lines
+    }
+
+    fun join(lines: List<List<CharSequence>>, sep: String): CharSequence {
+        val sb = android.text.SpannableStringBuilder()
+        lines.forEachIndexed { li, line ->
+            if (li > 0) sb.append("\n")
+            line.forEachIndexed { i, part -> if (i > 0) sb.append(sep); sb.append(part) }
+        }
+        return sb
+    }
+}

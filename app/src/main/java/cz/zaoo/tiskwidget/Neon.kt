@@ -22,14 +22,15 @@ object Neon {
         val showRing: Boolean,
         val time: String,
         val label: String,
-        val info: String,
-        val filColor: Int?,
-        val filType: String,
+        val parts: List<Part>,   // údaje seřazené podle důležitosti
         val cam: Boolean,
         val a: Int,          // barva začátku průběhu
         val b: Int,          // barva konce průběhu
         val light: Boolean,
     )
+
+    /** Jeden údaj, volitelně s barevnou tečkou (filament). */
+    data class Part(val text: String, val dot: Int? = null)
 
     val CYAN = Color.rgb(0, 229, 255)
     val GREEN = Color.rgb(0, 255, 156)
@@ -82,6 +83,55 @@ object Neon {
         var t = s
         while (t.isNotEmpty() && p.measureText("$t…") > maxW) t = t.dropLast(1)
         return "$t…"
+    }
+
+    private const val SEP = "  ·  "
+
+    private fun partW(pt: Part, p: Paint): Float =
+        p.measureText(pt.text) + if (pt.dot != null) p.textSize * 0.55f else 0f
+
+    /** Rozdělí údaje do max. maxLines řádků podle šířky; co se nevejde, vynechá. */
+    private fun pack(parts: List<Part>, p: Paint, maxW: Float, maxLines: Int): List<List<Part>> {
+        val lines = mutableListOf<MutableList<Part>>()
+        val widths = mutableListOf<Float>()
+        val sw = p.measureText(SEP)
+        for (raw in parts) {
+            var pt = raw
+            var w = partW(pt, p)
+            if (w > maxW) {
+                if (lines.size >= maxLines) continue
+                pt = pt.copy(text = fit(pt.text, p, maxW - (w - p.measureText(pt.text))))
+                w = partW(pt, p)
+            }
+            var placed = false
+            for (li in lines.indices) {
+                if (widths[li] + sw + w <= maxW) { lines[li].add(pt); widths[li] += sw + w; placed = true; break }
+            }
+            if (!placed && lines.size < maxLines) { lines.add(mutableListOf(pt)); widths.add(w) }
+        }
+        return lines
+    }
+
+    private fun lineW(line: List<Part>, p: Paint) =
+        line.sumOf { partW(it, p).toDouble() }.toFloat() + p.measureText(SEP) * (line.size - 1)
+
+    /** Nakreslí řádek údajů; x = levý okraj (nebo střed, když center). */
+    private fun drawLine(c: Canvas, line: List<Part>, x0: Float, y: Float, p: Paint, center: Boolean) {
+        var x = if (center) x0 - lineW(line, p) / 2 else x0
+        val align = p.textAlign
+        p.textAlign = Paint.Align.LEFT
+        line.forEachIndexed { idx, pt ->
+            if (idx > 0) { drawMid(c, SEP, x, y, p); x += p.measureText(SEP) }
+            if (pt.dot != null) {
+                val r = p.textSize * 0.2f
+                val dp = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = pt.dot; setShadowLayer(r, 0f, 0f, alpha(pt.dot, 180)) }
+                c.drawCircle(x + r, y, r, dp)
+                x += p.textSize * 0.55f
+            }
+            drawMid(c, pt.text, x, y, p)
+            x += p.measureText(pt.text)
+        }
+        p.textAlign = align
     }
 
     private fun segRing(c: Canvas, cx: Float, cy: Float, r: Float, w: Float, pct: Int, segs: Int, a: Int, b: Int) {
@@ -155,46 +205,49 @@ object Neon {
         val c = Canvas(bmp)
         val w = W.toFloat()
         val h = H.toFloat()
-        hudFrame(c, w, h, h * 0.24f, d.light, d.a)
+        // u = „jednotka“ velikosti: u nízkého panelu výška, u vysokého (4×2) podle šířky
+        val u = min(h, w / 2.6f)
+        hudFrame(c, w, h, u * 0.24f, d.light, d.a)
 
-        val R = h * 0.36f
-        val cx = h * 0.5f + h * 0.02f
+        val R = u * 0.36f
+        val cx = u * 0.52f
         val cy = h / 2
-        var x = h * 0.16f
+        var x = u * 0.16f
         if (d.showRing) {
-            segRing(c, cx, cy, R, h * 0.075f, d.pct, 36, d.a, d.b)
+            segRing(c, cx, cy, R, u * 0.075f, d.pct, 36, d.a, d.b)
             val inner = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.5f; color = alpha(d.a, 50) }
             c.drawCircle(cx, cy, R * 0.7f, inner)
             val pp = textPaint(orb, R * 0.62f, Color.WHITE, alpha(d.a, 220), R * 0.12f).apply { textAlign = Paint.Align.CENTER }
             drawMid(c, "${d.pct}", cx, cy, pp)
             val pc = textPaint(raj, R * 0.32f, alpha(d.a, 220)).apply { textAlign = Paint.Align.CENTER }
             drawMid(c, "%", cx, cy + R * 0.48f, pc)
-            x = cx + R + h * 0.16f
+            x = cx + R + u * 0.16f
         }
-        val right = w - h * 0.5f
-        val lp = textPaint(raj, h * 0.13f, alpha(d.a, 190)).apply { letterSpacing = 0.35f }
-        drawMid(c, fit(d.label, lp, right - x), x, h * 0.2f, lp)
+        val camReserve = if (d.cam) u * 0.5f else u * 0.15f
+        val lp = textPaint(raj, u * 0.13f, alpha(d.a, 190)).apply { letterSpacing = 0.35f }
+        var tsz = u * 0.33f
+        val tp = textPaint(orb, tsz, Color.WHITE, alpha(d.a, 220), u * 0.05f)
+        while (tp.measureText(d.time) > w - x - u * 0.15f && tsz > u * 0.12f) { tsz *= 0.92f; tp.textSize = tsz }
+        val ip = textPaint(raj, u * 0.13f, INFO)
 
-        var tsz = h * 0.33f
-        val tp = textPaint(orb, tsz, Color.WHITE, alpha(d.a, 220), h * 0.05f)
-        while (tp.measureText(d.time) > w - x - h * 0.2f && tsz > h * 0.12f) { tsz *= 0.92f; tp.textSize = tsz }
-        drawMid(c, d.time, x - 2, h * 0.52f, tp)
+        // kolik řádků údajů se vejde na výšku (víc u 4×2)
+        val lineH = ip.textSize * 1.3f
+        val labelH = lp.textSize * 1.5f
+        val timeH = tsz * 1.15f
+        val budget = h - u * 0.2f - labelH - timeH
+        val maxLines = (budget / lineH).toInt().coerceIn(1, 4)
+        val lines = pack(d.parts, ip, w - x - u * 0.15f, maxLines)
 
-        val ip = textPaint(raj, h * 0.13f, INFO)
-        var ix = x
-        val iy = h * 0.82f
-        if (d.filColor != null) {
-            val r = h * 0.045f
-            val dp = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = d.filColor; setShadowLayer(r, 0f, 0f, alpha(d.filColor, 180)) }
-            c.drawCircle(ix + r, iy, r, dp)
-            ix += 2 * r + h * 0.03f
-            val ft = d.filType + if (d.info.isNotEmpty()) "  ·  " else ""
-            drawMid(c, ft, ix, iy, ip)
-            ix += ip.measureText(ft)
+        // celý blok svisle na střed
+        val blockH = labelH + timeH + lines.size * lineH
+        val top = ((h - blockH) / 2).coerceAtLeast(u * 0.06f)
+        drawMid(c, fit(d.label, lp, w - x - camReserve), x, top + labelH * 0.5f, lp)
+        drawMid(c, d.time, x - 2, top + labelH + timeH * 0.5f, tp)
+        lines.forEachIndexed { li, line ->
+            drawLine(c, line, x, top + labelH + timeH + lineH * (li + 0.5f), ip, false)
         }
-        drawMid(c, fit(d.info, ip, w - ix - h * 0.18f), ix, iy, ip)
 
-        if (d.cam) camIcon(c, w - h * 0.42f, h * 0.14f, h * 0.2f, alpha(d.a, 220))
+        if (d.cam) camIcon(c, w - u * 0.42f, u * 0.14f, u * 0.2f, alpha(d.a, 220))
         return bmp
     }
 
@@ -242,13 +295,9 @@ object Neon {
             val pp = textPaint(orbMid, S * 0.07f, d.b).apply { textAlign = Paint.Align.CENTER }
             drawMid(c, "${d.pct} %", cx, cy + S * 0.12f, pp)
         }
-        val ip = textPaint(raj, S * 0.06f, INFO).apply { textAlign = Paint.Align.CENTER }
-        drawMid(c, fit(d.info, ip, maxW), cx, cy + S * 0.2f, ip)
-        if (d.filColor != null) {
-            val r = S * 0.022f
-            val dp = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = d.filColor; setShadowLayer(r, 0f, 0f, alpha(d.filColor, 180)) }
-            c.drawCircle(cx, cy + S * 0.265f, r, dp)
-        }
+        val ip = textPaint(raj, S * 0.06f, INFO)
+        val lines = pack(d.parts, ip, maxW, 2)
+        lines.forEachIndexed { li, line -> drawLine(c, line, cx, cy + S * (0.2f + 0.07f * li), ip, true) }
         // kamera v pravém dolním rohu widgetu (tam je i klikací plocha)
         if (d.cam) {
             val s = S * 0.1f

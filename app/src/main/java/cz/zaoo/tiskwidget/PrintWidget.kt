@@ -36,6 +36,8 @@ object WidgetOpts {
 
     /** Tvary widgetu: klíč, popis, layout. */
     val SHAPES = listOf(
+        Triple("neon_auto", "✨ Futuristický – automaticky podle velikosti", R.layout.widget_neon_panel),
+        Triple("auto", "Klasický – automaticky podle velikosti", R.layout.widget),
         Triple("rect", "Obdélník (3×1)", R.layout.widget),
         Triple("strip", "Tenký pruh (3×1 nebo 4×1)", R.layout.widget_strip),
         Triple("square", "Zaoblený čtverec s kruhem (2×2 a větší)", R.layout.widget_square),
@@ -83,6 +85,17 @@ class PrintWidget : AppWidgetProvider() {
             }
         }
 
+        /** „Automaticky“ → vybere tvar podle velikosti widgetu na ploše. */
+        fun resolve(shape: String, wDp: Int, hDp: Int): String {
+            val known = wDp > 0 && hDp > 0
+            val ratio = if (known) wDp.toFloat() / hDp else 3f
+            return when (shape) {
+                "auto" -> when { ratio < 1.45f -> "circle"; known && hDp < 75 -> "strip"; else -> "rect" }
+                "neon_auto" -> if (ratio < 1.45f) "neon_ring" else "neon_panel"
+                else -> shape
+            }
+        }
+
         /** Sestaví vzhled widgetu (používá se i pro náhled v nastavení). */
         fun build(
             ctx: Context,
@@ -92,6 +105,8 @@ class PrintWidget : AppWidgetProvider() {
             wDp: Int = 0,
             hDp: Int = 0,
         ): RemoteViews {
+            @Suppress("NAME_SHADOWING")
+            val shape = resolve(shape, wDp, hDp)
             if (shape.startsWith("neon")) return buildNeon(ctx, opt, shape, wDp, hDp)
             val store = Store(ctx)
             val i = Fmt.info(store)
@@ -111,21 +126,26 @@ class PrintWidget : AppWidgetProvider() {
                 else -> v.setInt(R.id.w_root, "setBackgroundResource",
                     if (light) R.drawable.widget_bg_light else R.drawable.widget_bg)
             }
-            // Kruh/čtverec: písmo roste s velikostí widgetu (2×2, 3×3, 4×4…)
-            if (round && sizeDp > 0) {
-                val d = sizeDp.toFloat()
-                fun ts(id: Int, k: Float, min: Float) = v.setTextViewTextSize(id, TypedValue.COMPLEX_UNIT_DIP, maxOf(min, d * k))
-                ts(R.id.w_time, 0.15f, 13f)
-                ts(R.id.w_pct, 0.095f, 10f)
-                ts(R.id.w_info, 0.072f, 9f)
-                ts(R.id.w_cam, 0.085f, 11f)
+            // ---- Automatické přizpůsobení velikosti (vše v dp) ----
+            val W = if (wDp > 0) wDp.toFloat() else if (round) 150f else 320f
+            val H = if (hDp > 0) hDp.toFloat() else when (shape) { "strip" -> 48f; "rect" -> 84f; else -> 150f }
+            val dmin = minOf(W, H)
+            val k = when (shape) {
+                "strip" -> (H / 44f).coerceIn(0.8f, 1.6f)
+                else -> (H / 72f).coerceIn(0.8f, 1.7f)
             }
+            var szTime = when { round -> maxOf(13f, dmin * 0.15f); shape == "strip" -> 16f * k; else -> 22f * k }
+            val szPct = when { round -> maxOf(10f, dmin * 0.095f); shape == "strip" -> 13f * k; else -> 15f * k }
+            val szInfo = when { round -> maxOf(9f, dmin * 0.072f); shape == "strip" -> 12f * k; else -> minOf(12f * k, 17f) }
+            val szCam = when { round -> maxOf(11f, dmin * 0.085f); shape == "strip" -> 14f * k; else -> 15f * k }
+            fun ts(id: Int, sz: Float) = v.setTextViewTextSize(id, TypedValue.COMPLEX_UNIT_DIP, sz)
 
             if (!store.configured) {
                 v.setTextViewText(R.id.w_time, if (round) "P1S" else "Tisk P1S")
                 v.setTextViewText(R.id.w_info, if (round) "Klepni" else "Klepni a přihlas se")
                 vis(R.id.w_time, true); vis(R.id.w_info, true)
                 v.setTextViewText(R.id.w_pct, ""); vis(R.id.w_cam, false)
+                ts(R.id.w_time, szTime); ts(R.id.w_info, szInfo)
                 if (round) v.setImageViewBitmap(R.id.w_ring, ring(0, false, shape == "circle", light))
                 else vis(R.id.w_progress, false)
             } else {
@@ -139,58 +159,84 @@ class PrintWidget : AppWidgetProvider() {
                     else -> Fmt.stateCz(i.state)
                 }
                 val showTime = opt("time") || !active
-                v.setTextViewText(R.id.w_time, if (showTime) main else "${i.pct} %")
-                vis(R.id.w_time, true)
-
+                val timeText = if (showTime) main else "${i.pct} %"
                 val pctText = when {
                     i.state == "PAUSE" -> "⏸ ${i.pct} %"
                     active -> "${i.pct} %"
                     else -> ""
                 }
-                // w_pct drží kameru vpravo, proto zůstává viditelný (jen bez textu)
-                v.setTextViewText(R.id.w_pct, if (opt("pct") && showTime) pctText else "")
+                var pctShown = if (opt("pct") && showTime) pctText else ""
+                val cam = opt("cam") && store.hasCamera
+                val thumb = if (shape == "rect" && opt("thumb") && (active || i.state == "FINISH") && store.coverName.isNotEmpty())
+                    Cover.load(ctx, 144) else null
+
+                // Kolik místa je na šířku
+                val camW = if (cam && !round) szCam * 1.3f + 18f else 0f
+                val contentW = when (shape) {
+                    "rect" -> W - 20f - (if (thumb != null) 58f else 0f)
+                    "strip" -> W - 24f
+                    "circle" -> dmin * 0.58f
+                    else -> (dmin - 24f) * 0.62f
+                }
+                // Čas zmenšit, dokud se řádek nevejde; když ani tak, schovat procenta
+                fun rowW() = Fit.width(timeText, szTime, true) +
+                    (if (pctShown.isNotEmpty() && !round) Fit.width(pctShown, szPct) + 8f else 0f) + camW
+                val rowLimit = if (shape == "strip") contentW * 0.62f else contentW
+                while (rowW() > rowLimit && szTime > 11f) szTime *= 0.92f
+                if (rowW() > rowLimit) pctShown = ""
+                if (round) while (Fit.width(timeText, szTime, true) > contentW && szTime > 11f) szTime *= 0.92f
+
+                v.setTextViewText(R.id.w_time, timeText)
+                vis(R.id.w_time, true)
+                v.setTextViewText(R.id.w_pct, pctShown)
+                ts(R.id.w_time, szTime); ts(R.id.w_pct, szPct); ts(R.id.w_info, szInfo); ts(R.id.w_cam, szCam)
 
                 val barPct = when { i.state == "FINISH" -> 100; active -> i.pct; else -> 0 }
+                val showBar = opt("progress") && (active || i.state == "FINISH")
                 if (round) {
                     v.setImageViewBitmap(R.id.w_ring, ring(barPct, opt("progress"), shape == "circle", light))
                 } else {
-                    val showBar = opt("progress") && (active || i.state == "FINISH")
                     vis(R.id.w_progress, showBar)
                     if (showBar) v.setProgressBar(R.id.w_progress, 100, barPct, false)
                 }
 
-                // Spodní řádek – poskládaný z vybraných údajů
+                // Údaje seřazené podle důležitosti
                 val parts = mutableListOf<CharSequence>()
-                if (opt("name") && !round && i.name.isNotEmpty() && (active || i.state == "FINISH")) parts += i.name
+                val refreshing = store.refreshAt > i.realUpdated && System.currentTimeMillis() - store.refreshAt < 15_000
+                if (refreshing) parts += "⟳ obnovuji…"
+                if (Fmt.hasError(i)) parts += if (round || i.printError == 0L) "⚠ chyba" else "⚠ ${Fmt.errCode(i.printError)}"
+                if (!i.connected && !refreshing) parts += "offline"
                 if (opt("eta") && active && i.state != "PAUSE") parts += if (round) Fmt.eta(i) else "hotovo v ${Fmt.eta(i)}"
                 if (opt("fil") && active) Ams.current(store)?.let { t ->
                     val sp = android.text.SpannableString("● ${t.type}")
                     sp.setSpan(android.text.style.ForegroundColorSpan(t.color), 0, 1, 0)
                     parts += sp
                 }
-                if (opt("layers") && active && i.total > 0) parts += "vrstva ${i.layer}/${i.total}"
+                if (opt("name") && !round && i.name.isNotEmpty() && (active || i.state == "FINISH")) parts += i.name
                 if (opt("temps") && i.state.isNotEmpty()) parts += "${i.nozzle.toInt()}° / ${i.bed.toInt()}°"
+                if (opt("layers") && active && i.total > 0) parts += "vrstva ${i.layer}/${i.total}"
                 if (opt("updated") && i.realUpdated > 0) parts += Fmt.clock(i.realUpdated)
-                val refreshing = store.refreshAt > i.realUpdated && System.currentTimeMillis() - store.refreshAt < 15_000
-                if (Fmt.hasError(i)) parts.add(0, if (round || i.printError == 0L) "⚠ chyba" else "⚠ ${Fmt.errCode(i.printError)}")
-                if (refreshing) parts.add(0, "⟳ obnovuji…")
-                else if (!i.connected) parts += "offline"
                 if (i.error.isNotEmpty() && !active && !round) parts += i.error
-                // do kolečka se vejdou max. 2 údaje
-                val shown = if (round) parts.take(2) else parts
-                val joined = android.text.SpannableStringBuilder()
-                shown.forEachIndexed { idx, part ->
-                    if (idx > 0) joined.append(if (round) "\n" else " · ")
-                    joined.append(part)
+
+                // Kolik řádků se vejde na výšku
+                val lineH = szInfo * 1.35f
+                val maxLines = when (shape) {
+                    "strip" -> 1
+                    "rect" -> ((H - 16f - szTime * 1.3f - (if (showBar) 9f else 0f) - 3f) / lineH).toInt().coerceIn(1, 3)
+                    else -> if (dmin >= 190f) 3 else 2
                 }
-                v.setTextViewText(R.id.w_info, joined)
-                vis(R.id.w_info, parts.isNotEmpty() || shape == "strip")
+                val infoW = when (shape) {
+                    "strip" -> contentW - rowW() - 14f
+                    else -> contentW
+                }
+                val sep = if (round) "  " else " · "
+                val lines = if (infoW > 30f) Fit.pack(parts, szInfo, infoW, maxLines, sep) else emptyList()
+                v.setInt(R.id.w_info, "setMaxLines", maxOf(1, lines.size))
+                v.setTextViewText(R.id.w_info, Fit.join(lines, sep))
+                vis(R.id.w_info, lines.isNotEmpty() || shape == "strip")
 
-                vis(R.id.w_cam, opt("cam") && store.hasCamera)
-
+                vis(R.id.w_cam, cam)
                 if (shape == "rect") {
-                    val thumb = if (opt("thumb") && (active || i.state == "FINISH") && store.coverName.isNotEmpty())
-                        Cover.load(ctx, 144) else null
                     if (thumb != null) v.setImageViewBitmap(R.id.w_thumb, thumb)
                     vis(R.id.w_thumb, thumb != null)
                 }
@@ -230,26 +276,25 @@ class PrintWidget : AppWidgetProvider() {
                 else -> { label = "PŘIPOJUJI"; time = "--:--"; pct = 0 }
             }
 
-            val parts = mutableListOf<String>()
+            // údaje podle důležitosti – Neon je sám rozloží do řádků podle místa
+            val parts = mutableListOf<Neon.Part>()
             if (store.configured) {
-                if (opt("name") && panel && i.name.isNotEmpty() && (active || i.state == "FINISH")) parts += i.name
-                if (opt("eta") && active && i.state != "PAUSE") parts += "HOTOVO ${Fmt.eta(i)}"
-                if (opt("layers") && active && i.total > 0) parts += "V ${i.layer}/${i.total}"
-                if (opt("temps") && i.state.isNotEmpty()) parts += "${i.nozzle.toInt()}°/${i.bed.toInt()}°"
-                if (opt("updated") && i.realUpdated > 0) parts += "AKT. ${Fmt.clock(i.realUpdated)}"
                 val refreshing = store.refreshAt > i.realUpdated && System.currentTimeMillis() - store.refreshAt < 15_000
-                if (refreshing) parts.add(0, "OBNOVUJI…") else if (!i.connected) parts += "OFFLINE"
-            } else parts += "KLEPNI A PŘIHLAS SE"
-            val shown = if (panel) parts else parts.take(1)
+                if (refreshing) parts += Neon.Part("OBNOVUJI…") else if (!i.connected) parts += Neon.Part("OFFLINE")
+                if (opt("eta") && active && i.state != "PAUSE") parts += Neon.Part("HOTOVO ${Fmt.eta(i)}")
+                if (opt("fil") && active) Ams.current(store)?.let { parts += Neon.Part(it.type, it.color) }
+                if (opt("name") && panel && i.name.isNotEmpty() && (active || i.state == "FINISH")) parts += Neon.Part(i.name)
+                if (opt("temps") && i.state.isNotEmpty()) parts += Neon.Part("${i.nozzle.toInt()}°/${i.bed.toInt()}°")
+                if (opt("layers") && active && i.total > 0) parts += Neon.Part("V ${i.layer}/${i.total}")
+                if (opt("updated") && i.realUpdated > 0) parts += Neon.Part("AKT. ${Fmt.clock(i.realUpdated)}")
+            } else parts += Neon.Part("KLEPNI A PŘIHLAS SE")
 
-            val fil = if (opt("fil") && active) Ams.current(store) else null
             val showRing = opt("progress") && store.configured && (active || i.state == "FINISH" || !panel)
             val cam = opt("cam") && store.hasCamera
             val data = Neon.Data(
                 pct = pct, showRing = showRing,
                 time = if (opt("time") || !active) time else "$pct %",
-                label = label, info = shown.joinToString("  ·  "),
-                filColor = fil?.color, filType = fil?.type ?: "", cam = cam,
+                label = label, parts = parts, cam = cam,
                 a = a, b = b, light = opt("light"),
             )
 

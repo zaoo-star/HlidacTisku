@@ -155,7 +155,7 @@ class WidgetConfigActivity : Activity() {
             })
         }
         root.addView(TextView(this).apply {
-            text = "Po změně tvaru uprav i velikost na ploše: podrž widget a táhni za okraje (čtverec a kruh 2×2 nebo klidně 3×3 a víc – písmo se zvětší samo, pruh a obdélník 3×1)."
+            text = "Po změně tvaru uprav i velikost na ploše: podrž widget a táhni za okraje Widget se přizpůsobí sám: písmo i počet řádků podle velikosti. U „automaticky“ se podle tvaru na ploše vybere i rozložení (čtvercový → kruh, široký → panel)."
             setTextColor(0xFFAAAAAA.toInt())
             textSize = 13f
             setPadding(0, dp(12), 0, dp(12))
@@ -173,12 +173,16 @@ class WidgetConfigActivity : Activity() {
     private fun updatePreview() {
         preview.removeAllViews()
         try {
-            val round = shape == "square" || shape == "circle" || shape == "neon_ring"
-            val (pw, ph) = when (shape) { "neon_panel" -> 320 to 110; "neon_ring" -> 170 to 170; else -> 0 to 0 }
-            val rv = PrintWidget.build(this, { values[it] ?: true }, shape, if (round) 150 else 0, pw, ph)
+            val sh = PrintWidget.resolve(shape, 0, 0)
+            val round = sh == "square" || sh == "circle" || sh == "neon_ring"
+            val (pw, ph) = when (sh) {
+                "neon_panel" -> 320 to 110; "neon_ring" -> 170 to 170
+                "rect" -> 320 to 84; "strip" -> 320 to 48; else -> 150 to 150
+            }
+            val rv = PrintWidget.build(this, { values[it] ?: true }, sh, if (round) 150 else 0, pw, ph)
             val view = rv.apply(this, preview)
             view.setOnClickListener(null)
-            val lp = when (shape) {
+            val lp = when (sh) {
                 "square", "circle" -> FrameLayout.LayoutParams(dp(150), dp(150))
                 "neon_ring" -> FrameLayout.LayoutParams(dp(170), dp(170))
                 "neon_panel" -> FrameLayout.LayoutParams(dp(320), dp(110))
