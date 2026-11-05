@@ -224,11 +224,20 @@ class AddPrinterActivity : AppCompatActivity() {
         val (tN, name) = Ui.input(this, "Název (např. K1 Max)", "Klipper")
         val (tI, ip) = Ui.input(this, "IP adresa", "", InputType.TYPE_CLASS_TEXT,
             "Najdeš ji na displeji tiskárny v nastavení sítě. Port (7125) doplním sám.")
-        val (tK, key) = Ui.input(this, "API klíč (většinou není potřeba)", "")
-        listOf(tN, tI, tK).forEach { c.addView(it, Ui.lp(this, 0, 10)) }
+        listOf(tN, tI).forEach { c.addView(it, Ui.lp(this, 0, 10)) }
+        val adv = Ui.vbox(this)
+        val (tU, user) = Ui.input(this, "Uživatel", "", InputType.TYPE_CLASS_TEXT,
+            "Stejné jméno a heslo, jakým se přihlašuješ do Fluiddu / Mainsailu.")
+        val (tP, pass) = Ui.input(this, "Heslo", "", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
+        val (tK, key) = Ui.input(this, "API klíč (místo jména a hesla)", "")
+        adv.addView(tU, Ui.lp(this, 0, 10)); adv.addView(tP, Ui.lp(this, 0, 10)); adv.addView(tK, Ui.lp(this, 0, 10))
+        Ui.gone(adv, true)
+        c.addView(Ui.button(this, "Tiskárna chce přihlášení (např. Qidi s účtem ve Fluiddu)", "text") { Ui.gone(adv, false) })
+        c.addView(adv)
         val msg = msgView()
         fun cfg() = PrinterCfg(id = Printers.newId("klipper"), name = name.text.toString().trim().ifEmpty { "Klipper" },
-            type = PrinterCfg.KLIPPER, host = ip.text.toString().trim(), apiKey = key.text.toString().trim())
+            type = PrinterCfg.KLIPPER, host = ip.text.toString().trim(), apiKey = key.text.toString().trim(),
+            user = user.text.toString().trim(), password = pass.text.toString())
         testAndSave(::cfg, msg)
     }
 
@@ -246,14 +255,18 @@ class AddPrinterActivity : AppCompatActivity() {
             if (base.host.isEmpty()) { msg.text = "Vyplň IP adresu."; return@button }
             msg.text = "Zkouším…"
             thread {
-                val tries = mutableListOf(base)
-                if (base.type == PrinterCfg.KLIPPER && !base.host.substringAfter("://").contains(':'))
-                    tries += base.copy(host = base.host + ":7125")
+                // Klipper bez portu: nejdřív Moonraker na 7125, pak adresa jak je (nginx na portu 80)
+                val tries = if (base.type == PrinterCfg.KLIPPER && !base.host.substringAfter("://").contains(':'))
+                    mutableListOf(base.copy(host = base.host + ":7125"), base) else mutableListOf(base)
                 var res: Pair<Boolean, String> = false to "❌"
+                var first: Pair<Boolean, String>? = null
                 for (t in tries) {
                     res = ConnTest.run(this, t)
+                    if (first == null) first = res
                     if (res.first) { tested = t; break }
                 }
+                // u neúspěchu ukázat chybu z Moonrakeru (port 7125) – ta je nejvýstižnější
+                if (!res.first && first != null) res = first
                 runOnUiThread { msg.text = res.second }
             }
         }, Ui.lp(this, 4, 8))

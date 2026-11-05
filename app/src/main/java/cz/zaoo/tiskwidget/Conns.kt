@@ -456,7 +456,9 @@ object ConnTest {
             true to "✅ Připojeno – ${Fmt.stateCz(s.state).lowercase()}" + (if (s.nozzle > 0) ", tryska ${s.nozzle.toInt()}°" else "")
         } catch (e: Exception) {
             false to when {
-                e.message?.contains("401") == true -> "❌ Tiskárna odmítla přístup – zkontroluj API klíč / heslo."
+                e.message?.contains("401") == true -> if (cfg.type == PrinterCfg.KLIPPER)
+                    "❌ Tiskárna chce přihlášení – klepni na „Tiskárna chce přihlášení“ a zadej jméno a heslo z Fluiddu."
+                    else "❌ Tiskárna odmítla přístup – zkontroluj API klíč / heslo."
                 e is java.net.SocketTimeoutException || e is java.net.ConnectException -> "❌ Tiskárna neodpovídá – zkontroluj IP adresu a že je telefon na stejné Wi-Fi."
                 e is java.net.UnknownHostException -> "❌ Adresa nenalezena – zadej jen IP, např. 192.168.1.50."
                 else -> "❌ Nepodařilo se připojit: ${e.message ?: e.javaClass.simpleName}"

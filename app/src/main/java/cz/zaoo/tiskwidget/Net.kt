@@ -20,6 +20,21 @@ object Http {
         base(host).removePrefix("http://").removePrefix("https://").substringBefore('/').substringBefore(':')
 
     private val digest = HashMap<String, Map<String, String>>()
+    private val jwt = HashMap<String, String>()
+
+    /** Klipper (Moonraker) s přihlašováním – např. Qidi s účtem ve Fluiddu. */
+    private fun moonLogin(baseUrl: String, user: String, pass: String): String? = try {
+        val c = URL("$baseUrl/access/login").openConnection() as HttpURLConnection
+        c.requestMethod = "POST"
+        c.connectTimeout = 8000; c.readTimeout = 8000
+        c.doOutput = true
+        c.setRequestProperty("Content-Type", "application/json")
+        val body = org.json.JSONObject().put("username", user).put("password", pass).put("source", "moonraker").toString()
+        c.outputStream.use { it.write(body.toByteArray()) }
+        val t = if (c.responseCode in 200..299) c.inputStream.bufferedReader().use { it.readText() } else ""
+        c.disconnect()
+        org.json.JSONObject(t).optJSONObject("result")?.optString("token")?.takeIf { it.isNotEmpty() }
+    } catch (_: Exception) { null }
     private var nc = 1
 
     private fun md5(s: String) = MessageDigest.getInstance("MD5").digest(s.toByteArray())
@@ -60,7 +75,12 @@ object Http {
             c.connectTimeout = timeout
             c.readTimeout = timeout
             c.instanceFollowRedirects = true
+            val klipperLogin = cfg.type == PrinterCfg.KLIPPER && cfg.apiKey.isEmpty() && cfg.user.isNotEmpty() && !path.startsWith("http")
             if (cfg.apiKey.isNotEmpty()) c.setRequestProperty("X-Api-Key", cfg.apiKey)
+            else if (klipperLogin) {
+                val t = jwt[key] ?: moonLogin(baseUrl, cfg.user, cfg.password)?.also { jwt[key] = it }
+                if (t != null) c.setRequestProperty("Authorization", "Bearer $t")
+            }
             else if (cfg.user.isNotEmpty()) digest[key]?.let { c.setRequestProperty("Authorization", digestHeader(it, method, uri, cfg.user, cfg.password)) }
             if (body != null) {
                 c.doOutput = true
@@ -68,7 +88,11 @@ object Http {
                 c.outputStream.use { it.write(body.toByteArray()) }
             }
             val code = c.responseCode
-            if (code == 401 && attempt == 0 && cfg.user.isNotEmpty() && cfg.apiKey.isEmpty()) {
+            if (code == 401 && attempt == 0 && klipperLogin) {
+                // token vypršel → přihlásit znovu
+                c.disconnect(); jwt.remove(key); continue
+            }
+            if (code == 401 && attempt == 0 && cfg.user.isNotEmpty() && cfg.apiKey.isEmpty() && cfg.type == PrinterCfg.PRUSA) {
                 val h = c.getHeaderField("WWW-Authenticate") ?: ""
                 c.disconnect()
                 if (h.startsWith("Digest")) { digest[key] = parseDigest(h); continue }
