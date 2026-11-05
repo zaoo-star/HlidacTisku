@@ -67,6 +67,43 @@ object Ams {
         Color.argb(255, h.substring(0, 2).toInt(16), h.substring(2, 4).toInt(16), h.substring(4, 6).toInt(16))
     } catch (_: Exception) { Color.GRAY }
 
+    /** Aktivní slot (ze kterého se tiskne), nebo null. */
+    fun current(s: Store): Tray? = trays(s).firstOrNull { it.active && it.type.isNotEmpty() }
+
+    /** Vyplní řádek barevnými sloty (sdílí appka i nastavení widgetu). */
+    fun fillRow(ctx: Context, box: android.widget.LinearLayout, trays: List<Tray>) {
+        val dens = ctx.resources.displayMetrics.density
+        fun dp(v: Int) = (v * dens).toInt()
+        box.removeAllViews()
+        for (t in trays) {
+            val cell = android.widget.LinearLayout(ctx).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                gravity = android.view.Gravity.CENTER_HORIZONTAL
+                setPadding(dp(2), dp(6), dp(2), dp(6))
+                if (t.active) background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = dp(10).toFloat(); setStroke(dp(2), 0xFF00AE42.toInt())
+                }
+            }
+            val dot = android.view.View(ctx).apply {
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(if (t.type.isEmpty()) 0xFF333333.toInt() else t.color)
+                    setStroke(dp(1), 0x66FFFFFF)
+                }
+            }
+            cell.addView(dot, android.widget.LinearLayout.LayoutParams(dp(30), dp(30)))
+            val rem = if (t.type.isEmpty()) "prázdné" else if (t.remain >= 0) "${t.remain} %" else "?"
+            cell.addView(android.widget.TextView(ctx).apply {
+                text = "${t.label}\n${t.type.ifEmpty { "–" }}\n$rem"
+                textSize = 12f
+                setTextColor(Color.WHITE)
+                gravity = android.view.Gravity.CENTER
+                setPadding(0, dp(2), 0, 0)
+            })
+            box.addView(cell, android.widget.LinearLayout.LayoutParams(0, -2, 1f))
+        }
+    }
+
     fun trays(s: Store): List<Tray> {
         val j = try { JSONObject(s.stateJson) } catch (_: Exception) { return emptyList() }
         val out = mutableListOf<Tray>()

@@ -8,6 +8,7 @@ import android.graphics.Typeface
 import android.os.Bundle
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
@@ -53,6 +54,63 @@ class WidgetConfigActivity : Activity() {
         })
         preview = FrameLayout(this).apply { setBackgroundColor(0xFF3A5A3A.toInt()); setPadding(dp(10), dp(10), dp(10), dp(10)) }
         root.addView(preview, LinearLayout.LayoutParams(-1, -2))
+
+        // --- Tiskárna: náhled modelu, AMS, historie, budík ---
+        val store = Store(this)
+        fun header(t: String) = TextView(this).apply {
+            text = t
+            textSize = 17f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            setPadding(0, dp(16), 0, dp(4))
+        }
+        fun button(t: String, onClick: () -> Unit) = Button(this).apply {
+            text = t
+            isAllCaps = false
+            setOnClickListener { onClick() }
+        }
+        root.addView(header("Tiskárna"))
+        val cover = Cover.load(this, 600)
+        if (cover != null && store.coverName.isNotEmpty()) {
+            root.addView(ImageView(this).apply {
+                setImageBitmap(cover)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setBackgroundColor(0xFF22262A.toInt())
+            }, LinearLayout.LayoutParams(-1, dp(160)))
+            root.addView(TextView(this).apply {
+                text = store.coverName
+                setTextColor(0xFFAAAAAA.toInt())
+                textSize = 13f
+                gravity = Gravity.CENTER
+            })
+        } else {
+            root.addView(TextView(this).apply {
+                text = "Náhled modelu se objeví po začátku dalšího tisku (jen s přihlášením přes Bambu účet)."
+                setTextColor(0xFFAAAAAA.toInt())
+                textSize = 13f
+            })
+        }
+        val trays = Ams.trays(store)
+        if (trays.isNotEmpty()) {
+            root.addView(header("AMS"))
+            val amsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            Ams.fillRow(this, amsRow, trays)
+            root.addView(amsRow)
+        }
+        root.addView(button("📊 Historie tisků a nacenění") { startActivity(Intent(this, HistoryActivity::class.java)) })
+        root.addView(Switch(this).apply {
+            text = "⏰ Hlasitý budík, když tisk skončí"
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            isChecked = store.alarmOn
+            setPadding(0, dp(10), 0, dp(4))
+            setOnCheckedChangeListener { _, c -> store.alarmOn = c }
+        })
+        root.addView(button("Vyzkoušet budík (5 s)") {
+            Alarm.start(this)
+            preview.postDelayed({ Alarm.stop() }, 5000)
+        })
+        root.addView(button("🎛 Ovládání, kamera a připojení") { startActivity(Intent(this, MainActivity::class.java)) })
 
         root.addView(TextView(this).apply {
             text = "Tvar"

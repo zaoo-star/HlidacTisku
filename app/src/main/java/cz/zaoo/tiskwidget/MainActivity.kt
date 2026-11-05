@@ -249,32 +249,8 @@ class MainActivity : Activity() {
         val key = trays.toString()
         if (key != shownAms) {
             shownAms = key
-            amsBox.removeAllViews()
             amsTitle.visibility = if (trays.isEmpty()) View.GONE else View.VISIBLE
-            for (t in trays) {
-                val cell = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                    gravity = android.view.Gravity.CENTER_HORIZONTAL
-                    setPadding(dp(2), dp(6), dp(2), dp(6))
-                    if (t.active) background = GradientDrawable().apply {
-                        cornerRadius = dp(10).toFloat(); setStroke(dp(2), 0xFF00AE42.toInt())
-                    }
-                }
-                val dot = View(this).apply {
-                    background = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(if (t.type.isEmpty()) 0xFF333333.toInt() else t.color)
-                        setStroke(dp(1), 0x66FFFFFF)
-                    }
-                }
-                cell.addView(dot, LinearLayout.LayoutParams(dp(30), dp(30)))
-                val rem = if (t.type.isEmpty()) "prázdné" else if (t.remain >= 0) "${t.remain} %" else "?"
-                cell.addView(tv("${t.label}\n${t.type.ifEmpty { "–" }}\n$rem", 12f).apply {
-                    gravity = android.view.Gravity.CENTER
-                    setPadding(0, dp(2), 0, 0)
-                })
-                amsBox.addView(cell, LinearLayout.LayoutParams(0, -2, 1f))
-            }
+            Ams.fillRow(this, amsBox, trays)
         }
         val l = Fmt.info(store).lightOn
         lightBtn.text = when (l) { true -> "💡 Zhasnout"; false -> "💡 Rozsvítit"; null -> "💡 Světlo" }

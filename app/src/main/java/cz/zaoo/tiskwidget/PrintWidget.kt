@@ -26,6 +26,7 @@ object WidgetOpts {
         Opt("name", "Název modelu", true),
         Opt("eta", "Kdy bude hotovo (hodina)", true),
         Opt("thumb", "Náhled modelu (u obdélníku)", true),
+        Opt("fil", "Aktuální filament (barva a typ)", false),
         Opt("layers", "Vrstvy (38/236)", false),
         Opt("temps", "Teploty trysky a podložky", false),
         Opt("updated", "Čas poslední aktualizace", false),
@@ -154,9 +155,14 @@ class PrintWidget : AppWidgetProvider() {
                 }
 
                 // Spodní řádek – poskládaný z vybraných údajů
-                val parts = mutableListOf<String>()
+                val parts = mutableListOf<CharSequence>()
                 if (opt("name") && !round && i.name.isNotEmpty() && (active || i.state == "FINISH")) parts += i.name
                 if (opt("eta") && active && i.state != "PAUSE") parts += if (round) Fmt.eta(i) else "hotovo v ${Fmt.eta(i)}"
+                if (opt("fil") && active) Ams.current(store)?.let { t ->
+                    val sp = android.text.SpannableString("● ${t.type}")
+                    sp.setSpan(android.text.style.ForegroundColorSpan(t.color), 0, 1, 0)
+                    parts += sp
+                }
                 if (opt("layers") && active && i.total > 0) parts += "vrstva ${i.layer}/${i.total}"
                 if (opt("temps") && i.state.isNotEmpty()) parts += "${i.nozzle.toInt()}° / ${i.bed.toInt()}°"
                 if (opt("updated") && i.realUpdated > 0) parts += Fmt.clock(i.realUpdated)
@@ -167,7 +173,12 @@ class PrintWidget : AppWidgetProvider() {
                 if (i.error.isNotEmpty() && !active && !round) parts += i.error
                 // do kolečka se vejdou max. 2 údaje
                 val shown = if (round) parts.take(2) else parts
-                v.setTextViewText(R.id.w_info, shown.joinToString(if (round) "\n" else " · "))
+                val joined = android.text.SpannableStringBuilder()
+                shown.forEachIndexed { idx, part ->
+                    if (idx > 0) joined.append(if (round) "\n" else " · ")
+                    joined.append(part)
+                }
+                v.setTextViewText(R.id.w_info, joined)
                 vis(R.id.w_info, parts.isNotEmpty() || shape == "strip")
 
                 vis(R.id.w_cam, opt("cam") && store.hasCamera)
