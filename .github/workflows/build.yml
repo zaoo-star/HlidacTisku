@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [bambu-widget]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -26,14 +26,16 @@ jobs:
       - name: Build
         run: gradle assembleRelease --no-daemon --stacktrace
 
-      - name: Publish APK
+      - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MSG: ${{ github.event.head_commit.message }}
         run: |
-          cp app/build/outputs/apk/release/app-release.apk TiskP1S.apk
-          gh release delete tisk-p1s -y --cleanup-tag || true
-          gh release create tisk-p1s TiskP1S.apk \
+          cp app/build/outputs/apk/release/app-release.apk HlidacTisku.apk
+          TAG="v1.1.${{ github.run_number }}"
+          printf 'Stáhni **HlidacTisku.apk** v telefonu a nainstaluj (přes starou verzi, nastavení zůstane).\n\n**Změny:** %s\n' "$(printf '%s' "$MSG" | head -1)" > notes.md
+          gh release create "$TAG" HlidacTisku.apk \
             --target "$GITHUB_SHA" \
-            --prerelease \
-            --title "Tisk P1S – Android widget (build ${{ github.run_number }})" \
-            --notes "Stáhni TiskP1S.apk na telefonu a nainstaluj."
+            --latest \
+            --title "Hlídač tisku $TAG" \
+            --notes-file notes.md

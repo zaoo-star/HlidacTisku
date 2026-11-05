@@ -3,7 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val runNo = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+// nový repozitář čísluje buildy od 1 → +100, aby šla nová verze nainstalovat přes starou
+val runNo = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt() + 100
 
 android {
     namespace = "cz.zaoo.tiskwidget"
@@ -14,7 +15,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = runNo
-        versionName = "1.0.$runNo"
+        versionName = "1.1.${runNo - 100}"
     }
 
     signingConfigs {
