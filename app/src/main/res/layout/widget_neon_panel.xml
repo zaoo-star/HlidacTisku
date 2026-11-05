@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- celý vzhled je obrázek vykreslený v appce (Neon.kt) -->
+    <ImageView
+        android:id="@+id/w_img"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitCenter" />
+
+    <!-- neviditelná klikací plocha nad ikonou kamery -->
+    <TextView
+        android:id="@+id/w_cam"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="top|end" />
+</FrameLayout>

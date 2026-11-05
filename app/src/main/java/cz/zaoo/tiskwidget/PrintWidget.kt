@@ -40,6 +40,8 @@ object WidgetOpts {
         Triple("strip", "Tenký pruh (3×1 nebo 4×1)", R.layout.widget_strip),
         Triple("square", "Zaoblený čtverec s kruhem (2×2 a větší)", R.layout.widget_square),
         Triple("circle", "Kruh (2×2 a větší)", R.layout.widget_circle),
+        Triple("neon_panel", "✨ Futuristický panel (3×1, 4×1, 4×2)", R.layout.widget_neon_panel),
+        Triple("neon_ring", "✨ Futuristický kruh (2×2 a větší)", R.layout.widget_neon_ring),
     )
 
     fun shape(ctx: Context): String = prefs(ctx).getString("shape", "rect") ?: "rect"
@@ -77,7 +79,7 @@ class PrintWidget : AppWidgetProvider() {
                 val w = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
                 val hgt = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)
                 val d = if (w > 0 && hgt > 0) minOf(w, hgt) else 0
-                try { mgr.updateAppWidget(id, build(ctx, sizeDp = d)) } catch (_: Exception) {}
+                try { mgr.updateAppWidget(id, build(ctx, sizeDp = d, wDp = w, hDp = hgt)) } catch (_: Exception) {}
             }
         }
 
@@ -87,7 +89,10 @@ class PrintWidget : AppWidgetProvider() {
             opt: (String) -> Boolean = { WidgetOpts.get(ctx, it) },
             shape: String = WidgetOpts.shape(ctx),
             sizeDp: Int = 0,
+            wDp: Int = 0,
+            hDp: Int = 0,
         ): RemoteViews {
+            if (shape.startsWith("neon")) return buildNeon(ctx, opt, shape, wDp, hDp)
             val store = Store(ctx)
             val i = Fmt.info(store)
             val layout = WidgetOpts.SHAPES.firstOrNull { it.first == shape }?.third ?: R.layout.widget
@@ -196,6 +201,77 @@ class PrintWidget : AppWidgetProvider() {
             v.setOnClickPendingIntent(R.id.w_cam, Notifs.openCamera(ctx))
             return v
         }
+
+        /** Futuristický vzhled – data se poskládají sem, kreslí je Neon.kt. */
+        private fun buildNeon(ctx: Context, opt: (String) -> Boolean, shape: String, wDp: Int, hDp: Int): RemoteViews {
+            val store = Store(ctx)
+            val i = Fmt.info(store)
+            val panel = shape == "neon_panel"
+            val layout = if (panel) R.layout.widget_neon_panel else R.layout.widget_neon_ring
+            val v = RemoteViews(ctx.packageName, layout)
+            val active = Fmt.active(i.state)
+            val err = Fmt.hasError(i)
+
+            var a = Neon.CYAN; var b = Neon.GREEN
+            val label: String
+            val time: String
+            var pct = i.pct
+            when {
+                !store.configured -> { a = Neon.GREY; b = Neon.GREY; label = "TISK P1S"; time = "NASTAV"; pct = 0 }
+                err -> { a = Neon.RED; b = Neon.RED2
+                    label = if (i.printError != 0L) "CHYBA ${Fmt.errCode(i.printError)}" else "UPOZORNĚNÍ"
+                    time = if (active) hm(i.remain) else "!!" }
+                i.state == "PAUSE" -> { a = Neon.AMBER; b = Neon.AMBER2; label = "POZASTAVENO"; time = hm(i.remain) }
+                i.state == "PREPARE" -> { label = "PŘÍPRAVA"; time = hm(i.remain) }
+                active -> { label = "ZBÝVÁ"; time = hm(i.remain) }
+                i.state == "FINISH" -> { b = Neon.GREEN; a = Neon.GREEN; label = "TISK"; time = "HOTOVO"; pct = 100 }
+                i.state == "FAILED" -> { a = Neon.RED; b = Neon.RED2; label = "TISK"; time = "CHYBA" }
+                i.state == "IDLE" -> { a = Neon.GREY; b = Neon.GREY; label = "TISKÁRNA"; time = "--:--"; pct = 0 }
+                else -> { label = "PŘIPOJUJI"; time = "--:--"; pct = 0 }
+            }
+
+            val parts = mutableListOf<String>()
+            if (store.configured) {
+                if (opt("name") && panel && i.name.isNotEmpty() && (active || i.state == "FINISH")) parts += i.name
+                if (opt("eta") && active && i.state != "PAUSE") parts += "HOTOVO ${Fmt.eta(i)}"
+                if (opt("layers") && active && i.total > 0) parts += "V ${i.layer}/${i.total}"
+                if (opt("temps") && i.state.isNotEmpty()) parts += "${i.nozzle.toInt()}°/${i.bed.toInt()}°"
+                if (opt("updated") && i.realUpdated > 0) parts += "AKT. ${Fmt.clock(i.realUpdated)}"
+                val refreshing = store.refreshAt > i.realUpdated && System.currentTimeMillis() - store.refreshAt < 15_000
+                if (refreshing) parts.add(0, "OBNOVUJI…") else if (!i.connected) parts += "OFFLINE"
+            } else parts += "KLEPNI A PŘIHLAS SE"
+            val shown = if (panel) parts else parts.take(1)
+
+            val fil = if (opt("fil") && active) Ams.current(store) else null
+            val showRing = opt("progress") && store.configured && (active || i.state == "FINISH" || !panel)
+            val cam = opt("cam") && store.hasCamera
+            val data = Neon.Data(
+                pct = pct, showRing = showRing,
+                time = if (opt("time") || !active) time else "$pct %",
+                label = label, info = shown.joinToString("  ·  "),
+                filColor = fil?.color, filType = fil?.type ?: "", cam = cam,
+                a = a, b = b, light = opt("light"),
+            )
+
+            // velikost obrázku = velikost widgetu (max. 760 px na delší straně)
+            val dens = ctx.resources.displayMetrics.density
+            val wd = if (wDp > 0) wDp else if (panel) 320 else 170
+            val hd = if (hDp > 0) hDp else if (panel) 110 else 170
+            val k = minOf(dens, 760f / maxOf(wd, hd))
+            val wp = (wd * k).toInt().coerceAtLeast(60)
+            val hp = (hd * k).toInt().coerceAtLeast(40)
+            val bmp = if (panel) Neon.panel(ctx, wp, hp, data) else Neon.ring(ctx, wp, hp, data)
+            v.setImageViewBitmap(R.id.w_img, bmp)
+
+            v.setOnClickPendingIntent(R.id.w_root,
+                if (store.configured) MonitorService.refreshIntent(ctx) else Notifs.openApp(ctx))
+            if (cam) v.setOnClickPendingIntent(R.id.w_cam, Notifs.openCamera(ctx))
+            else v.setOnClickPendingIntent(R.id.w_cam,
+                if (store.configured) MonitorService.refreshIntent(ctx) else Notifs.openApp(ctx))
+            return v
+        }
+
+        private fun hm(min: Int): String = "%d:%02d".format(min / 60, min % 60)
 
         /**
          * Kruhový průběh jako obrázek – ImageView ho se scaleType=fitCenter

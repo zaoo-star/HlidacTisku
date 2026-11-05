@@ -173,12 +173,15 @@ class WidgetConfigActivity : Activity() {
     private fun updatePreview() {
         preview.removeAllViews()
         try {
-            val round = shape == "square" || shape == "circle"
-            val rv = PrintWidget.build(this, { values[it] ?: true }, shape, if (round) 150 else 0)
+            val round = shape == "square" || shape == "circle" || shape == "neon_ring"
+            val (pw, ph) = when (shape) { "neon_panel" -> 320 to 110; "neon_ring" -> 170 to 170; else -> 0 to 0 }
+            val rv = PrintWidget.build(this, { values[it] ?: true }, shape, if (round) 150 else 0, pw, ph)
             val view = rv.apply(this, preview)
             view.setOnClickListener(null)
             val lp = when (shape) {
                 "square", "circle" -> FrameLayout.LayoutParams(dp(150), dp(150))
+                "neon_ring" -> FrameLayout.LayoutParams(dp(170), dp(170))
+                "neon_panel" -> FrameLayout.LayoutParams(dp(320), dp(110))
                 "strip" -> FrameLayout.LayoutParams(-1, dp(48))
                 else -> FrameLayout.LayoutParams(-1, dp(84))
             }
