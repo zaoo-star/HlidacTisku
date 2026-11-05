@@ -6,6 +6,10 @@ import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
 import android.view.View
 import android.widget.RemoteViews
 
@@ -78,8 +82,7 @@ class PrintWidget : AppWidgetProvider() {
 
             val light = opt("light")
             when (shape) {
-                "circle" -> v.setInt(R.id.w_bg, "setBackgroundResource",
-                    if (light) R.drawable.circle_bg_light else R.drawable.circle_bg)
+                "circle" -> {}  // pozadí kruhu je součástí obrázku
                 "strip" -> v.setInt(R.id.w_root, "setBackgroundResource",
                     if (light) R.drawable.pill_bg_light else R.drawable.pill_bg)
                 else -> v.setInt(R.id.w_root, "setBackgroundResource",
@@ -90,7 +93,9 @@ class PrintWidget : AppWidgetProvider() {
                 v.setTextViewText(R.id.w_time, if (round) "P1S" else "Tisk P1S")
                 v.setTextViewText(R.id.w_info, if (round) "Klepni" else "Klepni a přihlas se")
                 vis(R.id.w_time, true); vis(R.id.w_info, true)
-                v.setTextViewText(R.id.w_pct, ""); vis(R.id.w_progress, false); vis(R.id.w_cam, false)
+                v.setTextViewText(R.id.w_pct, ""); vis(R.id.w_cam, false)
+                if (round) v.setImageViewBitmap(R.id.w_ring, ring(0, false, shape == "circle", light))
+                else vis(R.id.w_progress, false)
             } else {
                 // Hlavní řádek
                 val main = when {
@@ -113,10 +118,14 @@ class PrintWidget : AppWidgetProvider() {
                 // w_pct drží kameru vpravo, proto zůstává viditelný (jen bez textu)
                 v.setTextViewText(R.id.w_pct, if (opt("pct") && showTime) pctText else "")
 
-                val showBar = opt("progress") && (active || i.state == "FINISH" || round)
-                vis(R.id.w_progress, showBar)
-                if (showBar) v.setProgressBar(R.id.w_progress, 100,
-                    when { i.state == "FINISH" -> 100; active -> i.pct; else -> 0 }, false)
+                val barPct = when { i.state == "FINISH" -> 100; active -> i.pct; else -> 0 }
+                if (round) {
+                    v.setImageViewBitmap(R.id.w_ring, ring(barPct, opt("progress"), shape == "circle", light))
+                } else {
+                    val showBar = opt("progress") && (active || i.state == "FINISH")
+                    vis(R.id.w_progress, showBar)
+                    if (showBar) v.setProgressBar(R.id.w_progress, 100, barPct, false)
+                }
 
                 // Spodní řádek – poskládaný z vybraných údajů
                 val parts = mutableListOf<String>()
@@ -128,8 +137,10 @@ class PrintWidget : AppWidgetProvider() {
                 val refreshing = store.refreshAt > i.realUpdated && System.currentTimeMillis() - store.refreshAt < 15_000
                 if (refreshing) parts.add(0, "⟳ obnovuji…")
                 else if (!i.connected) parts += "offline"
-                if (i.error.isNotEmpty() && !active) parts += i.error
-                v.setTextViewText(R.id.w_info, parts.joinToString(" · "))
+                if (i.error.isNotEmpty() && !active && !round) parts += i.error
+                // do kolečka se vejdou max. 2 údaje
+                val shown = if (round) parts.take(2) else parts
+                v.setTextViewText(R.id.w_info, shown.joinToString(if (round) "\n" else " · "))
                 vis(R.id.w_info, parts.isNotEmpty() || shape == "strip")
 
                 vis(R.id.w_cam, opt("cam") && store.hasCamera)
@@ -139,6 +150,37 @@ class PrintWidget : AppWidgetProvider() {
                 if (store.configured) MonitorService.refreshIntent(ctx) else Notifs.openApp(ctx))
             v.setOnClickPendingIntent(R.id.w_cam, Notifs.openCamera(ctx))
             return v
+        }
+
+        /**
+         * Kruhový průběh jako obrázek – ImageView ho se scaleType=fitCenter
+         * vždy zmenší tak, aby se celý vešel (kruh se tak nikdy neořízne).
+         */
+        private fun ring(pct: Int, showRing: Boolean, withCircle: Boolean, light: Boolean): Bitmap {
+            val size = 320
+            val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val c = Canvas(bmp)
+            val p = Paint(Paint.ANTI_ALIAS_FLAG)
+            if (withCircle) {
+                p.style = Paint.Style.FILL
+                p.color = if (light) 0x80181A1C.toInt() else 0xE6181A1C.toInt()
+                c.drawCircle(size / 2f, size / 2f, size / 2f, p)
+            }
+            if (showRing) {
+                val stroke = size * 0.06f
+                val inset = if (withCircle) size * 0.09f else stroke / 2 + 2
+                val r = RectF(inset, inset, size - inset, size - inset)
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = stroke
+                p.strokeCap = Paint.Cap.ROUND
+                p.color = 0x33FFFFFF
+                c.drawArc(r, 0f, 360f, false, p)
+                if (pct > 0) {
+                    p.color = 0xFF00AE42.toInt()
+                    c.drawArc(r, -90f, 360f * pct.coerceAtMost(100) / 100f, false, p)
+                }
+            }
+            return bmp
         }
     }
 }

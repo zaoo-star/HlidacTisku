@@ -6,23 +6,14 @@
     android:background="@drawable/widget_bg"
     android:padding="8dp">
 
-    <ProgressBar
-        android:id="@+id/w_progress"
-        style="@android:style/Widget.Material.ProgressBar.Horizontal"
-        android:layout_width="106dp"
-        android:layout_height="106dp"
-        android:layout_gravity="center"
-        android:indeterminate="false"
-        android:max="100"
-        android:maxWidth="200dp"
-        android:maxHeight="200dp"
-        android:minWidth="106dp"
-        android:minHeight="106dp"
-        android:progress="0"
-        android:progressDrawable="@drawable/ring_progress" />
+    <ImageView
+        android:id="@+id/w_ring"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitCenter" />
 
     <LinearLayout
-        android:layout_width="88dp"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
         android:gravity="center_horizontal"
@@ -36,7 +27,7 @@
             android:maxLines="1"
             android:text="—"
             android:textColor="#FFFFFF"
-            android:textSize="19sp"
+            android:textSize="18sp"
             android:textStyle="bold" />
 
         <TextView
@@ -52,9 +43,8 @@
             android:id="@+id/w_info"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:ellipsize="end"
             android:gravity="center"
-            android:maxLines="1"
+            android:maxLines="2"
             android:textColor="#B3FFFFFF"
             android:textSize="11sp" />
     </LinearLayout>
