@@ -25,6 +25,7 @@ object WidgetOpts {
         Opt("progress", "Ukazatel průběhu", true),
         Opt("name", "Název modelu", true),
         Opt("eta", "Kdy bude hotovo (hodina)", true),
+        Opt("thumb", "Náhled modelu (u obdélníku)", true),
         Opt("layers", "Vrstvy (38/236)", false),
         Opt("temps", "Teploty trysky a podložky", false),
         Opt("updated", "Čas poslední aktualizace", false),
@@ -170,6 +171,13 @@ class PrintWidget : AppWidgetProvider() {
                 vis(R.id.w_info, parts.isNotEmpty() || shape == "strip")
 
                 vis(R.id.w_cam, opt("cam") && store.hasCamera)
+
+                if (shape == "rect") {
+                    val thumb = if (opt("thumb") && (active || i.state == "FINISH") && store.coverName.isNotEmpty())
+                        Cover.load(ctx, 144) else null
+                    if (thumb != null) v.setImageViewBitmap(R.id.w_thumb, thumb)
+                    vis(R.id.w_thumb, thumb != null)
+                }
             }
 
             v.setOnClickPendingIntent(R.id.w_root,

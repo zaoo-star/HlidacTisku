@@ -50,6 +50,18 @@ class Store(ctx: Context) {
     var lastUpdate: Long
         get() = p.getLong("lastUpdate", 0L)
         set(v) = p.edit().putLong("lastUpdate", v).apply()
+    var coverName: String
+        get() = s("coverName")
+        set(v) = put("coverName", v)
+    var priceKg: String
+        get() = p.getString("priceKg", "600") ?: "600"
+        set(v) = put("priceKg", v)
+    var priceHour: String
+        get() = p.getString("priceHour", "5") ?: "5"
+        set(v) = put("priceHour", v)
+    var alarmOn: Boolean
+        get() = p.getBoolean("alarmOn", false)
+        set(v) = p.edit().putBoolean("alarmOn", v).apply()
     var cmdMsg: String
         get() = s("cmdMsg")
         set(v) = put("cmdMsg", v)

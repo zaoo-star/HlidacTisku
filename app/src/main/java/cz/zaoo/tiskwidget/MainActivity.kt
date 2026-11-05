@@ -20,6 +20,8 @@ import android.text.InputType
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
+import android.widget.Switch
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
@@ -35,6 +37,11 @@ class MainActivity : Activity() {
     private lateinit var msg: TextView
     private lateinit var camBtn: Button
     private lateinit var ctrlMsg: TextView
+    private lateinit var cover: ImageView
+    private lateinit var amsBox: LinearLayout
+    private lateinit var amsTitle: TextView
+    private var shownCover = "-"
+    private var shownAms = "-"
     private lateinit var lightBtn: Button
     private lateinit var cloudBox: LinearLayout
     private lateinit var lanBox: LinearLayout
@@ -86,6 +93,13 @@ class MainActivity : Activity() {
         val root = box().apply { setPadding(dp(18), dp(18), dp(18), dp(40)) }
 
         root.addView(tv("🖨 Tisk P1S", 24f, true))
+        cover = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            visibility = View.GONE
+            background = GradientDrawable().apply { cornerRadius = dp(14).toFloat(); setColor(0xFF22262A.toInt()) }
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+        }
+        root.addView(cover, LinearLayout.LayoutParams(-1, dp(180)).apply { bottomMargin = dp(8) })
         status = tv("", 16f).apply {
             background = GradientDrawable().apply { cornerRadius = dp(14).toFloat(); setColor(0xFF22262A.toInt()) }
             setPadding(dp(14), dp(12), dp(14), dp(12))
@@ -93,6 +107,12 @@ class MainActivity : Activity() {
         root.addView(status)
         camBtn = btn("📷 Otevřít kameru") { startActivity(Intent(this, CameraActivity::class.java)) }
         root.addView(camBtn)
+
+        // --- AMS ---
+        amsTitle = tv("AMS", 18f, true).apply { setPadding(0, dp(14), 0, dp(4)); visibility = View.GONE }
+        root.addView(amsTitle)
+        amsBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        root.addView(amsBox)
 
         // --- Ovládání ---
         root.addView(tv("Ovládání", 18f, true).apply { setPadding(0, dp(14), 0, dp(2)) })
@@ -120,6 +140,21 @@ class MainActivity : Activity() {
         ))
         ctrlMsg = tv("", 13f, color = 0xFFAAAAAA.toInt())
         root.addView(ctrlMsg)
+
+        // --- Historie a budík ---
+        root.addView(btn("📊 Historie tisků a nacenění") { startActivity(Intent(this, HistoryActivity::class.java)) })
+        root.addView(Switch(this).apply {
+            text = "⏰ Hlasitý budík, když tisk skončí (zvoní i v tichém režimu)"
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            isChecked = store.alarmOn
+            setPadding(0, dp(10), 0, dp(4))
+            setOnCheckedChangeListener { _, c -> store.alarmOn = c }
+        })
+        root.addView(btn("Vyzkoušet budík (5 s)") {
+            Alarm.start(this)
+            h.postDelayed({ Alarm.stop() }, 5000)
+        })
 
         msg = tv("", 14f, color = 0xFFFFC857.toInt())
         root.addView(msg)
@@ -197,6 +232,50 @@ class MainActivity : Activity() {
         } else "Nejdřív se připoj k tiskárně ↓"
         camBtn.visibility = if (store.hasCamera) View.VISIBLE else View.GONE
         ctrlMsg.text = store.cmdMsg
+        if (Alarm.ringing) Alarm.stop()  // otevření appky budík vypne
+
+        // Náhled modelu
+        val i = Fmt.info(store)
+        val coverKey = if (Fmt.active(i.state) || i.state == "FINISH") store.coverName else ""
+        if (coverKey != shownCover) {
+            shownCover = coverKey
+            val bmp = if (coverKey.isNotEmpty()) Cover.load(this, 600) else null
+            cover.setImageBitmap(bmp)
+            cover.visibility = if (bmp != null) View.VISIBLE else View.GONE
+        }
+
+        // AMS
+        val trays = Ams.trays(store)
+        val key = trays.toString()
+        if (key != shownAms) {
+            shownAms = key
+            amsBox.removeAllViews()
+            amsTitle.visibility = if (trays.isEmpty()) View.GONE else View.VISIBLE
+            for (t in trays) {
+                val cell = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = android.view.Gravity.CENTER_HORIZONTAL
+                    setPadding(dp(2), dp(6), dp(2), dp(6))
+                    if (t.active) background = GradientDrawable().apply {
+                        cornerRadius = dp(10).toFloat(); setStroke(dp(2), 0xFF00AE42.toInt())
+                    }
+                }
+                val dot = View(this).apply {
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(if (t.type.isEmpty()) 0xFF333333.toInt() else t.color)
+                        setStroke(dp(1), 0x66FFFFFF)
+                    }
+                }
+                cell.addView(dot, LinearLayout.LayoutParams(dp(30), dp(30)))
+                val rem = if (t.type.isEmpty()) "prázdné" else if (t.remain >= 0) "${t.remain} %" else "?"
+                cell.addView(tv("${t.label}\n${t.type.ifEmpty { "–" }}\n$rem", 12f).apply {
+                    gravity = android.view.Gravity.CENTER
+                    setPadding(0, dp(2), 0, 0)
+                })
+                amsBox.addView(cell, LinearLayout.LayoutParams(0, -2, 1f))
+            }
+        }
         val l = Fmt.info(store).lightOn
         lightBtn.text = when (l) { true -> "💡 Zhasnout"; false -> "💡 Rozsvítit"; null -> "💡 Světlo" }
         if (camIp.text.isEmpty() && store.autoIp.isNotEmpty()) camIp.hint = "zjištěno: ${store.autoIp}"
@@ -298,6 +377,7 @@ class MainActivity : Activity() {
         store.mode = ""
         store.token = ""
         store.clearState()
+        Cover.clear(this, store)
         PrintWidget.render(this)
         say("Odhlášeno.")
     }

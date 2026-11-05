@@ -28,6 +28,14 @@ import java.util.UUID
 import java.util.concurrent.Executors
 import javax.net.ssl.SSLSocketFactory
 
+/** Tlačítko „Ztlumit“ / smazání notifikace vypne budík. */
+class AlarmStopReceiver : android.content.BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        Alarm.stop()
+        try { context.getSystemService(NotificationManager::class.java).cancel(2) } catch (_: Exception) {}
+    }
+}
+
 /** Drží spojení s tiskárnou (MQTT) a aktualizuje notifikaci + widget. */
 class MonitorService : Service() {
 
@@ -55,7 +63,7 @@ class MonitorService : Service() {
         private val KEYS = setOf(
             "gcode_state", "mc_percent", "mc_remaining_time", "layer_num", "total_layer_num",
             "subtask_name", "nozzle_temper", "bed_temper", "print_error", "mc_print_stage",
-            "hms", "lights_report",
+            "hms", "lights_report", "ams", "vt_tray",
         )
 
         const val ACTION_CMD = "cz.zaoo.tiskwidget.CMD"
@@ -74,6 +82,7 @@ class MonitorService : Service() {
     private val state = JSONObject()
     private var lastState = ""
     private var lastError = -1L
+    @Volatile private var coverTry = ""
     private var uiPending = false
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -336,7 +345,13 @@ class MonitorService : Service() {
         var changed = false
         synchronized(state) {
             p.keys().forEach { k ->
-                if (k in KEYS) { state.put(k, p.get(k)); changed = true }
+                if (k in KEYS) {
+                    val nv = p.get(k)
+                    val ov = state.opt(k)
+                    if (k == "ams" && nv is JSONObject && ov is JSONObject) Json.deepMerge(ov, nv)
+                    else state.put(k, nv)
+                    changed = true
+                }
             }
             if (changed) store.stateJson = state.toString()
         }
@@ -345,6 +360,17 @@ class MonitorService : Service() {
 
         val st = state.optString("gcode_state", "")
         var important = false
+        // Náhled modelu – stáhnout, když se začne tisknout něco nového
+        val nm = state.optString("subtask_name", "")
+        if (Fmt.active(st) && nm.isNotEmpty() && nm != store.coverName && nm != coverTry && store.mode == "cloud") {
+            coverTry = nm
+            Thread {
+                // chvilku počkat, než se tisk objeví v cloudu
+                try { Thread.sleep(8000) } catch (_: InterruptedException) {}
+                if (Cover.fetch(this, store, nm)) postUi(true) else coverTry = ""
+            }.start()
+        }
+
         val err = state.optLong("print_error", 0L)
         if (err != 0L && err != lastError) Notifs.error(this, Fmt.errCode(err))
         lastError = err
@@ -455,14 +481,20 @@ object Notifs {
             to == "PAUSE" && from == "RUNNING" -> "⏸ Tisk se pozastavil" to "Zkontroluj tiskárnu (filament, chyba…)"
             else -> return
         }
-        val n = NotificationCompat.Builder(ctx, CH_EV)
+        val alarm = Store(ctx).alarmOn && (to == "FINISH" || to == "FAILED")
+        val b = NotificationCompat.Builder(ctx, CH_EV)
             .setSmallIcon(R.drawable.ic_notif)
             .setContentTitle(title)
             .setContentText(text)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(openApp(ctx))
-            .build()
-        try { ctx.getSystemService(NotificationManager::class.java).notify(2, n) } catch (_: Exception) {}
+        if (alarm) {
+            val stop = PendingIntent.getBroadcast(ctx, 7, Intent(ctx, AlarmStopReceiver::class.java),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            b.addAction(0, "🔕 Ztlumit", stop).setDeleteIntent(stop)
+            Alarm.start(ctx)
+        }
+        try { ctx.getSystemService(NotificationManager::class.java).notify(2, b.build()) } catch (_: Exception) {}
     }
 }
