@@ -56,7 +56,7 @@ class AddPrinterActivity : AppCompatActivity() {
         clear("Jakou máš tiskárnu?", "Vyber značku – další kroky tě provedou.")
         choice("🟢", "Bambu Lab", "P1S, P1P, A1, A1 mini, X1C, H2D…") { stepBambu() }
         choice("🟠", "Prusa", "MK4, MK4S, MK3.9, Mini, XL, Core One (PrusaLink)") { stepPrusa() }
-        choice("🔵", "Klipper", "Creality K1/K2, Elegoo Neptune 4, Sovol, Voron, Anycubic Kobra S1… (Mainsail / Fluidd)") { stepKlipper() }
+        choice("🔵", "Klipper", "Creality K1/K2, Qidi (Q1 Pro, X-Plus, X-Max…), Elegoo Neptune 4, Sovol, Voron… (Mainsail / Fluidd)") { stepKlipper() }
     }
 
     // ------------------------------------------------------------ Bambu

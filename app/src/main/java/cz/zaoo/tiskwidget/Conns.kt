@@ -458,7 +458,8 @@ object ConnTest {
             false to when {
                 e.message?.contains("401") == true -> "❌ Tiskárna odmítla přístup – zkontroluj API klíč / heslo."
                 e is java.net.SocketTimeoutException || e is java.net.ConnectException -> "❌ Tiskárna neodpovídá – zkontroluj IP adresu a že je telefon na stejné Wi-Fi."
-                else -> "❌ ${e.message}"
+                e is java.net.UnknownHostException -> "❌ Adresa nenalezena – zadej jen IP, např. 192.168.1.50."
+                else -> "❌ Nepodařilo se připojit: ${e.message ?: e.javaClass.simpleName}"
             }
         }
     }

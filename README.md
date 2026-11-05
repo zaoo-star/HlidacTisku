@@ -8,7 +8,7 @@ Android aplikace a widget, který ukazuje **průběh 3D tisku** přímo na ploš
 |---|---|---|---|---|
 | **Bambu Lab** (P1S, P1P, A1, A1 mini, X1C, H2D…) | Bambu účet (i mimo domov) nebo domácí síť | P1/A1 v domácí síti* | ✅ (přes účet) | světlo ✅, pauza/stop* |
 | **Prusa** (MK4, MK4S, MK3.9, Mini, XL, Core One) | PrusaLink v domácí síti | – | – | pauza, pokračovat, stop |
-| **Klipper** (Creality K1/K2, Elegoo Neptune 4, Sovol, Voron…) | Moonraker v domácí síti | ✅ | ✅ | pauza, pokračovat, stop |
+| **Klipper** (Creality K1/K2, Qidi Q1 Pro / X-Plus / X-Max, Elegoo Neptune 4, Sovol, Voron…) | Moonraker v domácí síti | ✅ | ✅ | pauza, pokračovat, stop |
 
 \* Bambu některé funkce cizím aplikacím povolí jen se zapnutým LAN / Developer módem na tiskárně.
 

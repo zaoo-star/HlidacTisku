@@ -168,6 +168,14 @@ object Ui {
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         val frame = FrameLayout(a)
         frame.addView(root)
+        // Android 15 kreslí appku až pod horní lištu s hodinami → odsadit podle systémových lišt (i klávesnice)
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(frame) { v, insets ->
+            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars() or
+                androidx.core.view.WindowInsetsCompat.Type.displayCutout())
+            val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
+            v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
+            insets
+        }
         a.setContentView(frame)
         content.tag = frame
         return content
