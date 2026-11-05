@@ -122,12 +122,16 @@ class WidgetConfigActivity : AppCompatActivity() {
             }
             val p = Printers.get(this, printerId)
             val rv = PrintWidget.build(this, p, { values[it] ?: true }, sh, theme, pw, ph)
-            val view = rv.apply(this, preview)
+            // Kreslit přes kontext aplikace: inflater aktivity (AppCompat) by nahradil
+            // TextView/ImageView za AppCompat verze, které widget nepovoluje → prázdný náhled.
+            val view = rv.apply(applicationContext, preview)
             view.setOnClickListener(null)
             val lp = FrameLayout.LayoutParams(Ui.dp(this, pw), Ui.dp(this, ph))
             lp.gravity = Gravity.CENTER
             preview.addView(view, lp)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            preview.addView(Ui.text(this, "Náhled se nepodařilo zobrazit: ${e.message}", 13f, Ui.MUTED))
+        }
     }
 
     private fun save() {
