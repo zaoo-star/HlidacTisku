@@ -20,6 +20,9 @@ object Fmt {
         val realUpdated: Long,  // kdy opravdu přišla data
         val connected: Boolean,
         val error: String,
+        val printError: Long,   // kód chyby z tiskárny (0 = bez chyby)
+        val hmsCount: Int,      // počet aktivních HMS hlášení
+        val lightOn: Boolean?,
     )
 
     fun info(s: Store): Info {
@@ -43,6 +46,13 @@ object Fmt {
             realUpdated = s.lastUpdate,
             connected = s.connected,
             error = s.error,
+            printError = j.optLong("print_error", 0L),
+            hmsCount = j.optJSONArray("hms")?.length() ?: 0,
+            lightOn = j.optJSONArray("lights_report")?.let { arr ->
+                (0 until arr.length()).map { arr.optJSONObject(it) }
+                    .firstOrNull { it?.optString("node") == "chamber_light" }
+                    ?.optString("mode")?.let { it == "on" }
+            },
         )
     }
 
@@ -91,6 +101,20 @@ object Fmt {
         else -> stateCz(i.state)
     }
 
+    /** Kód chyby ve formátu, jaký ukazuje Bambu (např. 0300-400C). */
+    fun errCode(code: Long): String {
+        val h = "%08X".format(code and 0xFFFFFFFFL)
+        return h.substring(0, 4) + "-" + h.substring(4)
+    }
+
+    fun hasError(i: Info) = i.printError != 0L || i.hmsCount > 0
+
+    fun errText(i: Info): String = when {
+        i.printError != 0L -> "⚠ Chyba tiskárny ${errCode(i.printError)}"
+        i.hmsCount > 0 -> "⚠ Tiskárna hlásí upozornění (${i.hmsCount})"
+        else -> ""
+    }
+
     fun temps(i: Info) = "tryska ${i.nozzle.toInt()}° · podložka ${i.bed.toInt()}°"
 
     fun longText(s: Store): String {
@@ -102,7 +126,9 @@ object Fmt {
             if (i.name.isNotEmpty()) sb.append("Model: ${i.name}\n")
             if (i.total > 0) sb.append("Vrstva ${i.layer} / ${i.total}\n")
         }
+        if (hasError(i)) sb.append(errText(i)).append(" – podrobnosti v Bambu Handy\n")
         if (i.state.isNotEmpty()) sb.append(temps(i)).append('\n')
+        if (i.lightOn != null) sb.append(if (i.lightOn) "💡 Světlo zapnuté\n" else "Světlo vypnuté\n")
         sb.append(if (i.connected) "🟢 Připojeno" else "🔴 Nepřipojeno")
         if (i.realUpdated > 0) sb.append("  ·  data z ${clock(i.realUpdated)}")
         if (i.error.isNotEmpty()) sb.append("\n⚠ ").append(i.error)

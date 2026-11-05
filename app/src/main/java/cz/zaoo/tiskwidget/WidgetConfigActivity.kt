@@ -97,7 +97,7 @@ class WidgetConfigActivity : Activity() {
             })
         }
         root.addView(TextView(this).apply {
-            text = "Po změně tvaru uprav i velikost na ploše: podrž widget a táhni za okraje (čtverec a kruh 2×2, pruh a obdélník 3×1)."
+            text = "Po změně tvaru uprav i velikost na ploše: podrž widget a táhni za okraje (čtverec a kruh 2×2 nebo klidně 3×3 a víc – písmo se zvětší samo, pruh a obdélník 3×1)."
             setTextColor(0xFFAAAAAA.toInt())
             textSize = 13f
             setPadding(0, dp(12), 0, dp(12))
@@ -115,7 +115,8 @@ class WidgetConfigActivity : Activity() {
     private fun updatePreview() {
         preview.removeAllViews()
         try {
-            val rv = PrintWidget.build(this, { values[it] ?: true }, shape)
+            val round = shape == "square" || shape == "circle"
+            val rv = PrintWidget.build(this, { values[it] ?: true }, shape, if (round) 150 else 0)
             val view = rv.apply(this, preview)
             view.setOnClickListener(null)
             val lp = when (shape) {

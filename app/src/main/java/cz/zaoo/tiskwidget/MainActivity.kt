@@ -34,6 +34,8 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var msg: TextView
     private lateinit var camBtn: Button
+    private lateinit var ctrlMsg: TextView
+    private lateinit var lightBtn: Button
     private lateinit var cloudBox: LinearLayout
     private lateinit var lanBox: LinearLayout
     private lateinit var codeBox: LinearLayout
@@ -91,6 +93,34 @@ class MainActivity : Activity() {
         root.addView(status)
         camBtn = btn("📷 Otevřít kameru") { startActivity(Intent(this, CameraActivity::class.java)) }
         root.addView(camBtn)
+
+        // --- Ovládání ---
+        root.addView(tv("Ovládání", 18f, true).apply { setPadding(0, dp(14), 0, dp(2)) })
+        fun row(vararg b: Button) = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            b.forEach { addView(it, LinearLayout.LayoutParams(0, -2, 1f)) }
+        }
+        lightBtn = btn("💡 Světlo") {
+            MonitorService.command(this, if (Fmt.info(store).lightOn == true) "light_off" else "light_on")
+        }
+        root.addView(row(
+            lightBtn,
+            btn("⏸ Pauza") { MonitorService.command(this, "pause") },
+        ))
+        root.addView(row(
+            btn("▶ Pokračovat") { MonitorService.command(this, "resume") },
+            btn("⏹ Zastavit") {
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("Zastavit tisk?")
+                    .setMessage("Tisk se ukončí a nepůjde v něm pokračovat.")
+                    .setPositiveButton("Zastavit") { _, _ -> MonitorService.command(this, "stop") }
+                    .setNegativeButton("Zrušit", null)
+                    .show()
+            },
+        ))
+        ctrlMsg = tv("", 13f, color = 0xFFAAAAAA.toInt())
+        root.addView(ctrlMsg)
+
         msg = tv("", 14f, color = 0xFFFFC857.toInt())
         root.addView(msg)
 
@@ -166,6 +196,9 @@ class MainActivity : Activity() {
             (if (store.devName.isNotEmpty()) "${store.devName}\n" else "") + Fmt.longText(store)
         } else "Nejdřív se připoj k tiskárně ↓"
         camBtn.visibility = if (store.hasCamera) View.VISIBLE else View.GONE
+        ctrlMsg.text = store.cmdMsg
+        val l = Fmt.info(store).lightOn
+        lightBtn.text = when (l) { true -> "💡 Zhasnout"; false -> "💡 Rozsvítit"; null -> "💡 Světlo" }
         if (camIp.text.isEmpty() && store.autoIp.isNotEmpty()) camIp.hint = "zjištěno: ${store.autoIp}"
     }
 

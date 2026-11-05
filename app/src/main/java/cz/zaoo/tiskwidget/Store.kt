@@ -50,6 +50,9 @@ class Store(ctx: Context) {
     var lastUpdate: Long
         get() = p.getLong("lastUpdate", 0L)
         set(v) = p.edit().putLong("lastUpdate", v).apply()
+    var cmdMsg: String
+        get() = s("cmdMsg")
+        set(v) = put("cmdMsg", v)
     var refreshAt: Long
         get() = p.getLong("refreshAt", 0L)
         set(v) = p.edit().putLong("refreshAt", v).apply()

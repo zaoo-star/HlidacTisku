@@ -55,7 +55,16 @@ class MonitorService : Service() {
         private val KEYS = setOf(
             "gcode_state", "mc_percent", "mc_remaining_time", "layer_num", "total_layer_num",
             "subtask_name", "nozzle_temper", "bed_temper", "print_error", "mc_print_stage",
+            "hms", "lights_report",
         )
+
+        const val ACTION_CMD = "cz.zaoo.tiskwidget.CMD"
+
+        /** Příkaz pro tiskárnu: light_on, light_off, pause, resume, stop. */
+        fun command(ctx: Context, cmd: String) {
+            val i = Intent(ctx, MonitorService::class.java).setAction(ACTION_CMD).putExtra("cmd", cmd)
+            try { ContextCompat.startForegroundService(ctx, i) } catch (_: Exception) {}
+        }
     }
 
     private lateinit var store: Store
@@ -64,6 +73,7 @@ class MonitorService : Service() {
     private val worker = Executors.newSingleThreadExecutor()
     private val state = JSONObject()
     private var lastState = ""
+    private var lastError = -1L
     private var uiPending = false
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -92,6 +102,7 @@ class MonitorService : Service() {
             old.keys().forEach { state.put(it, old.get(it)) }
         } catch (_: Exception) {}
         lastState = state.optString("gcode_state", "")
+        lastError = state.optLong("print_error", 0L)
         try {
             val f = IntentFilter(Intent.ACTION_USER_PRESENT)
             if (Build.VERSION.SDK_INT >= 33) registerReceiver(unlockReceiver, f, Context.RECEIVER_NOT_EXPORTED)
@@ -109,6 +120,11 @@ class MonitorService : Service() {
         if (!store.configured) {
             stopSelf()
             return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_CMD) {
+            val cmd = intent.getStringExtra("cmd") ?: ""
+            worker.execute { sendCommand(cmd) }
+            return START_STICKY
         }
         val force = intent?.action == ACTION_RECONNECT
         if (force) {
@@ -258,6 +274,46 @@ class MonitorService : Service() {
         override fun deliveryComplete(token: IMqttDeliveryToken?) {}
     }
 
+    private fun sendCommand(cmd: String) {
+        val c = client
+        if (c == null || !c.isConnected) {
+            store.cmdMsg = "Tiskárna není připojená, příkaz nejde poslat."
+            return
+        }
+        val json = when (cmd) {
+            "light_on", "light_off" -> """{"system":{"sequence_id":"0","command":"ledctrl","led_node":"chamber_light","led_mode":"${if (cmd == "light_on") "on" else "off"}","led_on_time":500,"led_off_time":500,"loop_times":0,"interval_time":0}}"""
+            "pause", "resume", "stop" -> """{"print":{"sequence_id":"0","command":"$cmd","param":""}}"""
+            else -> return
+        }
+        val label = mapOf("light_on" to "Zapnout světlo", "light_off" to "Vypnout světlo",
+            "pause" to "Pauza", "resume" to "Pokračovat", "stop" to "Zastavit")[cmd]
+        try {
+            c.publish("device/${store.serial}/request", MqttMessage(json.toByteArray()))
+            store.cmdMsg = "Odesláno: $label…"
+        } catch (e: Exception) {
+            store.cmdMsg = "Nepodařilo se odeslat: ${e.message}"
+            return
+        }
+        // Po 12 s ověříme, jestli tiskárna poslechla
+        h.postDelayed({
+            worker.execute { pushAll() }
+            h.postDelayed({
+                val i = Fmt.info(store)
+                val ok = when (cmd) {
+                    "light_on" -> i.lightOn == true
+                    "light_off" -> i.lightOn == false
+                    "pause" -> i.state == "PAUSE"
+                    "resume" -> i.state == "RUNNING" || i.state == "PREPARE"
+                    "stop" -> !Fmt.active(i.state)
+                    else -> true
+                }
+                store.cmdMsg = if (ok) "✅ $label – hotovo"
+                else "❌ Tiskárna příkaz „$label“ neprovedla. Bambu ho bez zapnutého LAN Only / Developer módu na tiskárně blokuje."
+                doUi()
+            }, 5000)
+        }, 7000)
+    }
+
     private fun pushAll() {
         try {
             val msg = """{"pushing":{"sequence_id":"0","command":"pushall","version":1,"push_target":1}}"""
@@ -289,6 +345,9 @@ class MonitorService : Service() {
 
         val st = state.optString("gcode_state", "")
         var important = false
+        val err = state.optLong("print_error", 0L)
+        if (err != 0L && err != lastError) Notifs.error(this, Fmt.errCode(err))
+        lastError = err
         if (st.isNotEmpty() && st != lastState) {
             Notifs.transition(this, lastState, st, Fmt.info(store))
             lastState = st
@@ -349,7 +408,11 @@ object Notifs {
             .setShowWhen(false)
             .setContentIntent(openApp(ctx))
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
-        if (Fmt.active(i.state)) {
+        if (Fmt.hasError(i)) {
+            b.setContentTitle(Fmt.errText(i))
+                .setContentText(if (Fmt.active(i.state)) "${i.pct} % · ${Fmt.stateCz(i.state)}" else Fmt.stateCz(i.state))
+            if (Fmt.active(i.state)) b.setProgress(100, i.pct, false)
+        } else if (Fmt.active(i.state)) {
             val name = if (i.name.isNotEmpty()) i.name + " · " else ""
             b.setContentTitle("${i.pct} % · zbývá ${Fmt.remain(i.remain)}")
                 .setContentText("${name}hotovo v ${Fmt.eta(i)}")
@@ -360,6 +423,28 @@ object Notifs {
         }
         if (Store(ctx).hasCamera) b.addAction(0, "📷 Kamera", openCamera(ctx))
         return b.build()
+    }
+
+    /** Otevře Bambu Handy (kde je popis chyby), jinak naši appku. */
+    fun openHandy(ctx: Context): PendingIntent {
+        val pm = ctx.packageManager
+        val launch = listOf("bbl.intl.bambulab.com", "com.bambulab.handy", "bbl.cn.bambulab.com")
+            .firstNotNullOfOrNull { pm.getLaunchIntentForPackage(it) }
+            ?: Intent(ctx, MainActivity::class.java)
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return PendingIntent.getActivity(ctx, 5, launch, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    }
+
+    fun error(ctx: Context, code: String) {
+        val n = NotificationCompat.Builder(ctx, CH_EV)
+            .setSmallIcon(R.drawable.ic_notif)
+            .setContentTitle("⚠ Tiskárna hlásí chybu")
+            .setContentText("Kód $code – klepni pro otevření Bambu Handy")
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(openHandy(ctx))
+            .build()
+        try { ctx.getSystemService(NotificationManager::class.java).notify(3, n) } catch (_: Exception) {}
     }
 
     fun transition(ctx: Context, from: String, to: String, i: Fmt.Info) {
