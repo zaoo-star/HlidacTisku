@@ -47,8 +47,8 @@ object Updater {
     }
 
     /** Zeptá se GitHubu (ze sítě – volat mimo hlavní vlákno). Vrací novější verzi, nebo null. */
-    fun check(ctx: Context): Rel? = try {
-        prefs(ctx).edit().putLong("last", System.currentTimeMillis()).apply()
+    fun check(ctx: Context, key: String = "last"): Rel? = try {
+        prefs(ctx).edit().putLong(key, System.currentTimeMillis()).apply()
         val c = URL(API).openConnection() as HttpURLConnection
         c.connectTimeout = 10000; c.readTimeout = 10000
         c.setRequestProperty("Accept", "application/vnd.github+json")
@@ -70,8 +70,8 @@ object Updater {
         r
     } catch (_: Exception) { null }
 
-    fun dueForCheck(ctx: Context, everyMs: Long) =
-        System.currentTimeMillis() - prefs(ctx).getLong("last", 0L) > everyMs
+    fun dueForCheck(ctx: Context, everyMs: Long, key: String = "last") =
+        System.currentTimeMillis() - prefs(ctx).getLong(key, 0L) > everyMs
 
     /**
      * Ze služby: jednou za 6 h zkontrolovat. Když je automatická aktualizace zapnutá
@@ -79,9 +79,10 @@ object Updater {
      * jakmile appku jednou nainstalovala sama). Jinak dá vědět notifikací.
      */
     fun backgroundCheck(ctx: Context) {
-        if (installing || !dueForCheck(ctx, 6 * 3600_000L)) return
+        // vlastní časovač – kontroly z appky (každých 30 min) ho neodkládají
+        if (installing || !dueForCheck(ctx, 6 * 3600_000L, "lastBg")) return
         Thread {
-            val r = check(ctx) ?: return@Thread
+            val r = check(ctx, "lastBg") ?: return@Thread
             val canInstall = Build.VERSION.SDK_INT < 26 || ctx.packageManager.canRequestPackageInstalls()
             if (autoOn(ctx) && canInstall) {
                 try {
