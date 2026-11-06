@@ -79,18 +79,18 @@ class MainActivity : AppCompatActivity() {
             val s = Statuses.get(ctx, p.id)
             val v = Fmt.view(s)
             val col = Ui.stateColor(s)
+            val off = Fmt.offline(s)
             sub.text = "${p.brand} · ${p.connLabel}"
             state.text = when {
+                off -> "Offline"
                 s.hasError -> Fmt.errText(s).removePrefix("⚠ ")
-                s.state.isEmpty() && s.error.isNotEmpty() -> "Nepřipojeno"
                 s.state.isEmpty() -> "Připojuji…"
-                !s.connected -> Fmt.stateCz(s.state) + " · offline"
                 else -> Fmt.stateCz(s.state)
             }
             state.setTextColor(col)
             (state.background as? android.graphics.drawable.GradientDrawable)?.setColor(
                 android.graphics.Color.argb(40, android.graphics.Color.red(col), android.graphics.Color.green(col), android.graphics.Color.blue(col)))
-            if (s.active) {
+            if (s.active && !off) {
                 time.text = Fmt.remain(v.remain)
                 pct.text = "${s.pct} %"
                 bar.setIndicatorColor(col)
@@ -101,13 +101,18 @@ class MainActivity : AppCompatActivity() {
                 parts += Fmt.temps(s)
                 info.text = parts.joinToString("  ·  ")
             } else {
-                time.text = when (s.state) { "FINISH" -> "Hotovo ✅"; "FAILED" -> "Skončil"; "IDLE" -> "Volná"; else -> "—" }
+                time.text = when {
+                    off -> "Offline"
+                    s.state == "FINISH" -> "Hotovo ✅"; s.state == "FAILED" -> "Skončil"; s.state == "IDLE" -> "Netiskne"
+                    else -> "Připojuji…"
+                }
                 pct.text = ""
-                Ui.gone(bar, s.state != "FINISH")
+                Ui.gone(bar, off || s.state != "FINISH")
                 bar.progress = 100
                 bar.setIndicatorColor(col)
                 info.text = when {
-                    s.error.isNotEmpty() -> s.error
+                    off -> listOf(Fmt.lastSeen(s).replaceFirstChar { it.uppercase() }, s.error.ifEmpty { "Tiskárna je vypnutá nebo mimo síť." })
+                        .filter { it.isNotEmpty() }.joinToString("  ·  ")
                     s.state.isNotEmpty() -> Fmt.temps(s) + (if (s.name.isNotEmpty() && s.state == "FINISH") "  ·  ${s.name}" else "")
                     else -> ""
                 }

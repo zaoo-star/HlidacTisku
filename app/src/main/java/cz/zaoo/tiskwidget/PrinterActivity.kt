@@ -147,21 +147,26 @@ class PrinterActivity : AppCompatActivity() {
         val s = Statuses.get(this, p.id)
         val v = Fmt.view(s)
         val col = Ui.stateColor(s)
+        val off = Fmt.offline(s)
         statePill.text = when {
+            off -> "Offline" + Fmt.lastSeen(s).let { if (it.isEmpty()) "" else " · $it" }
             s.hasError -> Fmt.errText(s)
-            s.state.isEmpty() && s.error.isNotEmpty() -> "Nepřipojeno"
             s.state.isEmpty() -> "Připojuji…"
-            else -> Fmt.stateCz(s.state) + if (!s.connected) " · offline" else ""
+            else -> Fmt.stateCz(s.state)
         }
         statePill.setTextColor(col)
         (statePill.background as? android.graphics.drawable.GradientDrawable)?.setColor(
             android.graphics.Color.argb(40, android.graphics.Color.red(col), android.graphics.Color.green(col), android.graphics.Color.blue(col)))
-        if (s.active) {
+        if (s.active && !off) {
             time.text = Fmt.remain(v.remain)
             pct.text = "${s.pct} %"
             bar.progress = s.pct
         } else {
-            time.text = when (s.state) { "FINISH" -> "Hotovo"; "FAILED" -> "Skončil"; "IDLE" -> "Volná"; else -> "—" }
+            time.text = when {
+                off -> "Offline"
+                s.state == "FINISH" -> "Hotovo"; s.state == "FAILED" -> "Skončil"; s.state == "IDLE" -> "Netiskne"
+                else -> "Připojuji…"
+            }
             pct.text = ""
             bar.progress = if (s.state == "FINISH") 100 else 0
         }

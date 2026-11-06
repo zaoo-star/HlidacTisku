@@ -140,7 +140,8 @@ class PrintWidget : AppWidgetProvider() {
             val layout = WidgetOpts.SHAPES.firstOrNull { it.first == shape }?.third ?: R.layout.widget
             val v = RemoteViews(ctx.packageName, layout)
             val round = shape == "square" || shape == "circle"
-            val active = s.active
+            val off = p != null && Fmt.offline(s)
+            val active = s.active && !off
             fun vis(id: Int, show: Boolean) = v.setViewVisibility(id, if (show) View.VISIBLE else View.GONE)
 
             val light = opt("light")
@@ -177,10 +178,12 @@ class PrintWidget : AppWidgetProvider() {
             }
 
             val main = when {
+                off -> "Offline"
                 active -> if (round) Fmt.remainShort(vw.remain) else Fmt.remain(vw.remain)
                 s.state == "FINISH" -> if (round) "Hotovo" else "Hotovo ✅"
                 s.state == "FAILED" -> "Skončil ❌"
-                s.state == "IDLE" -> "Volná"
+                s.state == "IDLE" -> "Netiskne"
+                s.state.isEmpty() -> "Připojuji…"
                 else -> "—"
             }
             val showTime = opt("time") || !active
@@ -210,8 +213,8 @@ class PrintWidget : AppWidgetProvider() {
             v.setTextViewText(R.id.w_pct, pctShown)
             ts(R.id.w_time, szTime); ts(R.id.w_pct, szPct); ts(R.id.w_info, szInfo); ts(R.id.w_cam, szCam)
 
-            val barPct = when { s.state == "FINISH" -> 100; active -> s.pct; else -> 0 }
-            val showBar = opt("progress") && (active || s.state == "FINISH")
+            val barPct = when { off -> 0; s.state == "FINISH" -> 100; active -> s.pct; else -> 0 }
+            val showBar = opt("progress") && (active || (s.state == "FINISH" && !off))
             if (round) v.setImageViewBitmap(R.id.w_ring, ring(barPct, opt("progress"), shape == "circle", light, theme))
             else { vis(R.id.w_progress, showBar); if (showBar) v.setProgressBar(R.id.w_progress, 100, barPct, false) }
 
@@ -220,8 +223,8 @@ class PrintWidget : AppWidgetProvider() {
             val refreshing = Store(ctx).refreshAt > s.updated && System.currentTimeMillis() - Store(ctx).refreshAt < 15_000
             if (opt("pname")) parts += p.name
             if (refreshing) parts += "⟳ obnovuji…"
-            if (s.hasError) parts += if (round) "⚠ chyba" else Fmt.errText(s)
-            if (!s.connected && !refreshing) parts += "offline"
+            if (off) parts += if (round) Fmt.lastSeen(s).removePrefix("naposledy ") else Fmt.lastSeen(s).ifEmpty { "tiskárna neodpovídá" }
+            if (s.hasError && !off) parts += if (round) "⚠ chyba" else Fmt.errText(s)
             if (opt("eta") && active && s.state != "PAUSE") parts += if (round) Fmt.eta(vw) else "hotovo v ${Fmt.eta(vw)}"
             if (opt("fil") && active && p.isBambu) Ams.current(ctx, p.id)?.let { t ->
                 val sp = android.text.SpannableString("● ${t.type}")
@@ -229,10 +232,10 @@ class PrintWidget : AppWidgetProvider() {
                 parts += sp
             }
             if (opt("name") && !round && s.name.isNotEmpty() && (active || s.state == "FINISH")) parts += s.name
-            if (opt("temps") && s.state.isNotEmpty()) parts += Fmt.temps(s)
+            if (opt("temps") && s.state.isNotEmpty() && !off) parts += Fmt.temps(s)
             if (opt("layers") && active && s.total > 0) parts += "vrstva ${s.layer}/${s.total}"
             if (opt("updated") && s.updated > 0) parts += Fmt.clock(s.updated)
-            if (s.error.isNotEmpty() && !active && !round) parts += s.error
+            if (off && s.error.isNotEmpty() && !round && shape != "strip") parts += s.error
 
             val lineH = szInfo * 1.35f
             val maxLines = when (shape) {
@@ -264,7 +267,8 @@ class PrintWidget : AppWidgetProvider() {
             val v = RemoteViews(ctx.packageName, if (panel) R.layout.widget_neon_panel else R.layout.widget_neon_ring)
             val s = if (p != null) Statuses.get(ctx, p.id) else Status()
             val vw = Fmt.view(s)
-            val active = s.active
+            val off = p != null && Fmt.offline(s)
+            val active = s.active && !off
 
             var a = theme.a; var b = theme.b
             val label: String
@@ -272,6 +276,7 @@ class PrintWidget : AppWidgetProvider() {
             var pct = s.pct
             when {
                 p == null -> { a = Neon.GREY; b = Neon.GREY; label = "HLÍDAČ TISKU"; time = "PŘIDEJ"; pct = 0 }
+                off -> { a = Neon.GREY; b = Neon.GREY; label = "TISKÁRNA"; time = "OFFLINE"; pct = 0 }
                 s.hasError -> { a = Neon.RED; b = Neon.RED2
                     label = if (s.printError != 0L) "CHYBA ${Fmt.errCode(s.printError)}" else "UPOZORNĚNÍ"
                     time = if (active) Fmt.hm(vw.remain) else "!!" }
@@ -280,7 +285,7 @@ class PrintWidget : AppWidgetProvider() {
                 active -> { label = "ZBÝVÁ"; time = Fmt.hm(vw.remain) }
                 s.state == "FINISH" -> { label = "TISK"; time = "HOTOVO"; pct = 100 }
                 s.state == "FAILED" -> { a = Neon.RED; b = Neon.RED2; label = "TISK"; time = "KONEC" }
-                s.state == "IDLE" -> { a = Neon.GREY; b = Neon.GREY; label = "TISKÁRNA"; time = "--:--"; pct = 0 }
+                s.state == "IDLE" -> { label = "TISKÁRNA"; time = "NETISKNE"; pct = 0 }
                 else -> { label = "PŘIPOJUJI"; time = "--:--"; pct = 0 }
             }
             val fullLabel = if (p != null && opt("pname")) "${p.name.uppercase()} · $label" else label
@@ -289,12 +294,13 @@ class PrintWidget : AppWidgetProvider() {
             if (p != null) {
                 val st = Store(ctx)
                 val refreshing = st.refreshAt > s.updated && System.currentTimeMillis() - st.refreshAt < 15_000
-                if (refreshing) parts += Neon.Part("OBNOVUJI…") else if (!s.connected) parts += Neon.Part("OFFLINE")
+                if (refreshing) parts += Neon.Part("OBNOVUJI…")
+                if (off) parts += Neon.Part(Fmt.lastSeen(s).uppercase().ifEmpty { "NEODPOVÍDÁ" })
                 if (s.alert.isNotEmpty()) parts += Neon.Part(s.alert.uppercase())
                 if (opt("eta") && active && s.state != "PAUSE") parts += Neon.Part("HOTOVO ${Fmt.eta(vw)}")
                 if (opt("fil") && active && p.isBambu) Ams.current(ctx, p.id)?.let { parts += Neon.Part(it.type, it.color) }
                 if (opt("name") && panel && s.name.isNotEmpty() && (active || s.state == "FINISH")) parts += Neon.Part(s.name)
-                if (opt("temps") && s.state.isNotEmpty()) parts += Neon.Part("${s.nozzle.toInt()}°/${s.bed.toInt()}°")
+                if (opt("temps") && s.state.isNotEmpty() && !off) parts += Neon.Part("${s.nozzle.toInt()}°/${s.bed.toInt()}°")
                 if (opt("layers") && active && s.total > 0) parts += Neon.Part("V ${s.layer}/${s.total}")
                 if (opt("updated") && s.updated > 0) parts += Neon.Part("AKT. ${Fmt.clock(s.updated)}")
             } else parts += Neon.Part("KLEPNI A PŘIDEJ TISKÁRNU")
@@ -302,7 +308,7 @@ class PrintWidget : AppWidgetProvider() {
             val cam = p != null && opt("cam") && p.hasCamera(s)
             val data = Neon.Data(
                 pct = pct,
-                showRing = opt("progress") && p != null && (active || s.state == "FINISH" || !panel),
+                showRing = opt("progress") && p != null && (active || (s.state == "FINISH" && !off) || !panel),
                 time = if (opt("time") || !active) time else "$pct %",
                 label = fullLabel, parts = parts, cam = cam, a = a, b = b, light = opt("light"), theme = theme,
             )

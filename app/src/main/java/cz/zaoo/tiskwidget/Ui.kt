@@ -39,6 +39,7 @@ object Ui {
     fun dpf(ctx: Context, v: Float) = v * ctx.resources.displayMetrics.density
 
     fun stateColor(s: Status): Int = when {
+        Fmt.offline(s) -> GREY
         s.hasError -> RED
         !s.connected && s.state.isEmpty() -> GREY
         s.state == "RUNNING" || s.state == "PREPARE" -> GREEN

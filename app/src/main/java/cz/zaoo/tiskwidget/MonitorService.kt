@@ -66,6 +66,7 @@ class MonitorService : Service(), Listener {
     private val conns = HashMap<String, Conn>()        // klíč: id tiskárny nebo "cloud"
     private val owner = HashMap<String, String>()      // id tiskárny -> klíč spojení
     private val coverTry = HashMap<String, String>()
+    private val lastPoke = HashMap<String, Long>()
     private var uiPending = false
     private var lastUnlock = 0L
 
@@ -233,7 +234,13 @@ class MonitorService : Service(), Listener {
             val now = System.currentTimeMillis()
             for (p in Printers.all(this@MonitorService)) {
                 val s = Statuses.get(this@MonitorService, p.id)
-                if (s.active && now - s.updated > 2 * 60_000L) connFor(p.id)?.refresh()
+                // tiskne a ticho 2 min → hned; jinak každých 5 min ověřit, že tiskárna žije (kvůli „Offline“)
+                val quiet = now - s.updated
+                val last = lastPoke[p.id] ?: 0L
+                if ((s.active && quiet > 2 * 60_000L) || (quiet > 5 * 60_000L && now - last > 5 * 60_000L)) {
+                    lastPoke[p.id] = now
+                    connFor(p.id)?.refresh()
+                }
             }
             Updater.backgroundCheck(this@MonitorService)
             h.postDelayed(this, 60_000L)
@@ -296,28 +303,29 @@ object Notifs {
         if (all.isEmpty()) return b.setContentTitle("Hlídač tisku").setContentText("Přidej tiskárnu").build()
 
         val items = all.map { it to Statuses.get(ctx, it.id) }
-        val active = items.filter { it.second.active || it.second.hasError }
+        val active = items.filter { (it.second.active || it.second.hasError) && !Fmt.offline(it.second) }
         val main = active.firstOrNull() ?: items.first()
         val (p, s) = main
         val prefix = if (all.size > 1) "${p.name}: " else ""
-        if (s.hasError) b.setContentTitle(prefix + Fmt.errText(s))
+        if (s.hasError && !Fmt.offline(s)) b.setContentTitle(prefix + Fmt.errText(s))
         else b.setContentTitle(prefix + Fmt.title(s))
         val v = Fmt.view(s)
         b.setContentText(when {
+            Fmt.offline(s) -> listOf(Fmt.lastSeen(s), s.error).filter { it.isNotEmpty() }.joinToString(" · ").ifEmpty { "Tiskárna neodpovídá" }
             s.active -> (if (s.name.isNotEmpty()) s.name + " · " else "") + "hotovo v ${Fmt.eta(v)}"
             s.error.isNotEmpty() -> s.error
             s.connected -> "Hlídám ${if (all.size > 1) "${all.size} tiskárny" else "tiskárnu"}"
             else -> "Připojuji se…"
         })
-        if (s.active) b.setProgress(100, s.pct, false)
+        if (s.active && !Fmt.offline(s)) b.setProgress(100, s.pct, false)
         if (all.size > 1) {
             val style = NotificationCompat.InboxStyle()
             for ((pp, ss) in items) {
                 val vv = Fmt.view(ss)
                 style.addLine("${pp.name}: " + when {
+                    Fmt.offline(ss) -> "offline" + Fmt.lastSeen(ss).let { if (it.isEmpty()) "" else " ($it)" }
                     ss.hasError -> Fmt.errText(ss)
                     ss.active -> "${ss.pct} % · ${Fmt.remain(vv.remain)} · hotovo ${Fmt.eta(vv)}"
-                    !ss.connected -> "offline"
                     else -> Fmt.stateCz(ss.state)
                 })
             }

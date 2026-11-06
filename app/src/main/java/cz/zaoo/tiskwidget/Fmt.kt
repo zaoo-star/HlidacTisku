@@ -19,13 +19,29 @@ object Fmt {
         return View(s, (s.remain - elapsed).coerceAtLeast(0), base)
     }
 
+    /** Tiskárna neodpovídá (vypnutá, mimo síť) – ne jen chvilkový výpadek. */
+    fun offline(s: Status): Boolean {
+        val age = if (s.updated > 0) System.currentTimeMillis() - s.updated else Long.MAX_VALUE
+        return (!s.connected && (s.error.isNotEmpty() || age > 2 * 60_000L)) ||
+            (s.updated > 0 && age > 12 * 60_000L)
+    }
+
+    /** „naposledy 18:42“ (nebo s datem, když to bylo jindy než dnes). */
+    fun lastSeen(s: Status): String {
+        if (s.updated <= 0) return ""
+        val a = Calendar.getInstance()
+        val b = Calendar.getInstance().apply { timeInMillis = s.updated }
+        val today = a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR) && a.get(Calendar.YEAR) == b.get(Calendar.YEAR)
+        return "naposledy " + if (today) clock(s.updated) else SimpleDateFormat("d. M. HH:mm", Locale.getDefault()).format(Date(s.updated))
+    }
+
     fun stateCz(st: String) = when (st) {
         "RUNNING" -> "Tiskne"
         "PAUSE" -> "Pozastaveno"
         "PREPARE" -> "Připravuje tisk"
         "FINISH" -> "Tisk hotový"
         "FAILED" -> "Tisk zrušen / chyba"
-        "IDLE" -> "Nečinná"
+        "IDLE" -> "Netiskne"
         "" -> "Čekám na data"
         else -> st
     }
@@ -75,9 +91,10 @@ object Fmt {
     fun title(s: Status): String {
         val v = view(s)
         return when {
-            s.state.isEmpty() && s.error.isNotEmpty() -> "Nepřipojeno"
+            offline(s) -> "Offline"
             s.state.isEmpty() -> "Připojuji se…"
             s.active -> "${s.pct} % · zbývá ${remain(v.remain)}"
+            s.state == "IDLE" -> "Netiskne"
             else -> stateCz(s.state)
         }
     }
