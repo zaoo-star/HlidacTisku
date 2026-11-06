@@ -95,6 +95,14 @@ class SettingsActivity : AppCompatActivity() {
         val (u, ui) = Ui.card(this, 14)
         val us = Ui.text(this, "Nainstalovaná verze ${Updater.current(this)}", 15f)
         ui.addView(us)
+        ui.addView(MaterialSwitch(this).apply {
+            text = "Aktualizovat automaticky"
+            textSize = 16f
+            setTextColor(Ui.TEXT)
+            isChecked = Updater.autoOn(this@SettingsActivity)
+            setOnCheckedChangeListener { _, ch -> Updater.setAuto(this@SettingsActivity, ch) }
+        }, Ui.lp(this, 8, 0))
+        ui.addView(Ui.text(this, "Nová verze se stáhne a nainstaluje sama na pozadí. Poprvé ji Android nechá potvrdit, potom už (Android 12+) proběhne bez klikání.", 13f, Ui.MUTED))
         ui.addView(Ui.button(this, "Zkontrolovat aktualizace", "tonal") {
             us.text = "Kontroluji…"
             Thread {

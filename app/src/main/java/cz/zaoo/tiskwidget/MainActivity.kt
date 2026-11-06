@@ -193,7 +193,7 @@ class MainActivity : AppCompatActivity() {
             Thread {
                 try {
                     val f = Updater.download(this, r) { pc -> runOnUiThread { status.text = "Stahuji… $pc %" } }
-                    runOnUiThread { status.text = "Staženo – potvrď instalaci."; btn.isEnabled = true; Updater.install(this, f) }
+                    runOnUiThread { status.text = "Instaluji… (poprvé potvrď, příště už se aktualizace nainstalují samy)"; btn.isEnabled = true; Updater.install(this, f) }
                 } catch (e: Exception) {
                     runOnUiThread { status.text = "Stažení se nepovedlo: ${e.message}"; btn.isEnabled = true }
                 }

@@ -92,6 +92,10 @@
         </provider>
 
         <receiver
+            android:name=".InstallReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".PinReceiver"
             android:exported="false" />
 
