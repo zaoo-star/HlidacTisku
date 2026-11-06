@@ -22,6 +22,7 @@ data class PrinterCfg(
         const val BAMBU_LAN = "bambu_lan"
         const val PRUSA = "prusa"
         const val KLIPPER = "klipper"
+        const val CREALITY = "creality"
 
         fun fromJson(j: JSONObject) = PrinterCfg(
             id = j.optString("id"), name = j.optString("name"), type = j.optString("type"),
@@ -37,21 +38,21 @@ data class PrinterCfg(
         .put("model", model)
 
     val isBambu get() = type == BAMBU_CLOUD || type == BAMBU_LAN
-    val brand get() = when (type) { BAMBU_CLOUD, BAMBU_LAN -> "Bambu Lab"; PRUSA -> "Prusa"; KLIPPER -> "Klipper"; else -> type }
+    val brand get() = when (type) { BAMBU_CLOUD, BAMBU_LAN -> "Bambu Lab"; PRUSA -> "Prusa"; KLIPPER -> "Klipper"; CREALITY -> "Creality"; else -> type }
     val connLabel get() = when (type) {
-        BAMBU_CLOUD -> "Bambu účet"; BAMBU_LAN -> "domácí síť"; PRUSA -> "PrusaLink"; KLIPPER -> "Moonraker"; else -> ""
+        BAMBU_CLOUD -> "Bambu účet"; BAMBU_LAN -> "domácí síť"; PRUSA -> "PrusaLink"; KLIPPER -> "Moonraker"; CREALITY -> "domácí síť"; else -> ""
     }
 
     /** Má kameru, kterou umíme zobrazit? */
     fun hasCamera(st: Status): Boolean = when (type) {
         BAMBU_CLOUD, BAMBU_LAN -> camHost(st).isNotEmpty() && accessCode.isNotEmpty() && !model.uppercase().let { it.startsWith("X1") || it.startsWith("H2") }
-        KLIPPER -> host.isNotEmpty()
+        KLIPPER, CREALITY -> host.isNotEmpty()
         else -> false
     }
 
     fun camHost(st: Status) = host.ifEmpty { st.autoIp }
 
-    val canLight get() = isBambu
+    val canLight get() = isBambu || type == CREALITY
     val canControl get() = true
     val hasHistory get() = type == BAMBU_CLOUD || type == KLIPPER
 }

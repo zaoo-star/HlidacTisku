@@ -451,6 +451,7 @@ object ConnTest {
             val s = when (cfg.type) {
                 PrinterCfg.PRUSA -> PrusaConn(ctx, cfg, dummy).fetch(Status())
                 PrinterCfg.KLIPPER -> KlipperConn(ctx, cfg, dummy).fetch(Status())
+                PrinterCfg.CREALITY -> CrealityConn.test(cfg.host)
                 else -> return true to "OK"
             }
             true to "✅ Připojeno – ${Fmt.stateCz(s.state).lowercase()}" + (if (s.nozzle > 0) ", tryska ${s.nozzle.toInt()}°" else "")

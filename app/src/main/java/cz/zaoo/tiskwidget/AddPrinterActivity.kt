@@ -56,7 +56,9 @@ class AddPrinterActivity : AppCompatActivity() {
         clear("Jakou máš tiskárnu?", "Vyber značku – další kroky tě provedou.")
         choice("🟢", "Bambu Lab", "P1S, P1P, A1, A1 mini, X1C, H2D…") { stepBambu() }
         choice("🟠", "Prusa", "MK4, MK4S, MK3.9, Mini, XL, Core One (PrusaLink)") { stepPrusa() }
-        choice("🔵", "Klipper", "Creality K1/K2, Qidi (Q1 Pro, X-Plus, X-Max…), Elegoo Neptune 4, Sovol, Voron… (Mainsail / Fluidd)") { stepKlipper() }
+        choice("⚪", "Creality", "K1, K1C, K1 Max, K2, Hi, Ender-3 V3… (s původním firmwarem)") { stepCreality() }
+        choice("🔵", "Klipper", "Qidi (Q1 Pro, X-Plus, X-Max…), Elegoo Neptune 4, Sovol, Voron, Creality s rootem… (Mainsail / Fluidd)") { stepKlipper() }
+        c.addView(help("SparkX i7 od Creality zatím připojit nejde – komunikuje jen přes Creality Cloud, ne v domácí síti."))
     }
 
     // ------------------------------------------------------------ Bambu
@@ -214,6 +216,20 @@ class AddPrinterActivity : AppCompatActivity() {
         fun cfg() = PrinterCfg(id = Printers.newId("prusa"), name = name.text.toString().trim().ifEmpty { "Prusa" },
             type = PrinterCfg.PRUSA, host = ip.text.toString().trim(), apiKey = key.text.toString().trim(),
             user = if (key.text.isNullOrBlank()) user.text.toString().trim() else "", password = pass.text.toString())
+        testAndSave(::cfg, msg)
+    }
+
+    // ------------------------------------------------------------ Creality
+
+    private fun stepCreality() {
+        clear("Creality", "Stačí IP adresa tiskárny – žádný root ani účet.")
+        val (tN, name) = Ui.input(this, "Název (např. K1C)", "Creality")
+        val (tI, ip) = Ui.input(this, "IP adresa", "", InputType.TYPE_CLASS_TEXT,
+            "Na displeji tiskárny: Nastavení → Síť / Wi-Fi (např. 192.168.1.105)")
+        listOf(tN, tI).forEach { c.addView(it, Ui.lp(this, 0, 10)) }
+        val msg = msgView()
+        fun cfg() = PrinterCfg(id = Printers.newId("creality"), name = name.text.toString().trim().ifEmpty { "Creality" },
+            type = PrinterCfg.CREALITY, host = ip.text.toString().trim())
         testAndSave(::cfg, msg)
     }
 

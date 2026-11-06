@@ -45,7 +45,7 @@ class CameraActivity : Activity() {
         thread {
             while (running) {
                 try {
-                    if (p.isBambu) bambu(p.camHost(st), p.accessCode) else klipper(p)
+                    if (p.isBambu) bambu(p.camHost(st), p.accessCode) else klipper(p, p.type == PrinterCfg.CREALITY)
                 } catch (e: Exception) {
                     if (!running) break
                     runOnUiThread {
@@ -91,10 +91,10 @@ class CameraActivity : Activity() {
     }
 
     /** Klipper: najde adresu snímku webkamery a opakovaně ji načítá. */
-    private fun klipper(p: PrinterCfg) {
+    private fun klipper(p: PrinterCfg, creality: Boolean) {
         val hostOnly = "http://" + Http.hostOnly(p.host)
         val urls = mutableListOf<String>()
-        try {
+        if (!creality) try {
             val r = Http.request(p, "GET", "/server/webcams/list")
             val cams = JSONObject(r.body).optJSONObject("result")?.optJSONArray("webcams")
             if (cams != null) for (i in 0 until cams.length()) {
@@ -102,13 +102,13 @@ class CameraActivity : Activity() {
                 if (u.isNotEmpty()) urls += if (u.startsWith("http")) u else hostOnly + (if (u.startsWith("/")) u else "/$u")
             }
         } catch (_: Exception) {}
+        urls += "$hostOnly:8080/?action=snapshot"   // Creality K1 / Hi
         urls += "$hostOnly/webcam/?action=snapshot"
-        urls += "$hostOnly:8080/?action=snapshot"   // Creality K1
         var url: String? = null
         for (u in urls) {
             if (Http.image(p, u, 1600) != null) { url = u; break }
         }
-        if (url == null) throw Exception("webkamera nenalezena")
+        if (url == null) throw Exception(if (creality) "kamera nenalezena (novější Creality K2 posílají video jinak a zatím je neumím)" else "webkamera nenalezena")
         while (running) {
             val b = Http.image(p, url, 1600) ?: throw Exception("kamera přestala odpovídat")
             show(b)

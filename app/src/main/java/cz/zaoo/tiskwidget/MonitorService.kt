@@ -148,6 +148,7 @@ class MonitorService : Service(), Listener {
                 PrinterCfg.BAMBU_LAN -> BambuConn(this, listOf(p), false, this)
                 PrinterCfg.PRUSA -> PrusaConn(this, p, this)
                 PrinterCfg.KLIPPER -> KlipperConn(this, p, this)
+                PrinterCfg.CREALITY -> CrealityConn(this, p, this)
                 else -> continue
             }
             conns[p.id] = c
@@ -211,6 +212,7 @@ class MonitorService : Service(), Listener {
                 val bmp = when (c) {
                     is BambuConn -> c.cover(p)
                     is PollConn -> c.cover()
+                    is CrealityConn -> c.cover()
                     else -> null
                 }
                 if (bmp != null) {
