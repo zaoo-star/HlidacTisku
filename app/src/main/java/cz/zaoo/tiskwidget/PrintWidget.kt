@@ -18,16 +18,29 @@ import android.widget.RemoteViews
 
 /** Barevná témata widgetu. */
 object Themes {
-    data class T(val key: String, val label: String, val a: Int, val b: Int, val bgTop: Int, val bgBot: Int, val info: Int, val hud: Boolean)
+    /** style: hud, minimal, terminal, fantasy, parchment, steam, pixel, cyber */
+    data class T(val key: String, val label: String, val a: Int, val b: Int, val bgTop: Int, val bgBot: Int, val info: Int, val style: String) {
+        val hud get() = style == "hud"
+    }
+
+    private fun c(v: Long) = v.toInt()
 
     val ALL = listOf(
-        T("neon", "Neon", 0xFF00E5FF.toInt(), 0xFF00FF9C.toInt(), 0xFF0E1624.toInt(), 0xFF04070C.toInt(), 0xFF8FB3C9.toInt(), true),
-        T("bambu", "Zelená", 0xFF00C853.toInt(), 0xFFB2FF59.toInt(), 0xFF0E1A12.toInt(), 0xFF040805.toInt(), 0xFF9FC4A8.toInt(), true),
-        T("synth", "Synthwave", 0xFFFF2BD6.toInt(), 0xFF7B5CFF.toInt(), 0xFF1A0F2A.toInt(), 0xFF07030D.toInt(), 0xFFC7AEE8.toInt(), true),
-        T("amber", "Retro jantar", 0xFFFFB000.toInt(), 0xFFFFE066.toInt(), 0xFF1C1408.toInt(), 0xFF090602.toInt(), 0xFFD9B97A.toInt(), true),
-        T("matrix", "Matrix", 0xFF00FF41.toInt(), 0xFF00A82B.toInt(), 0xFF041208.toInt(), 0xFF010402.toInt(), 0xFF7FD68F.toInt(), true),
-        T("lava", "Láva", 0xFFFF6A00.toInt(), 0xFFFF0055.toInt(), 0xFF22100A.toInt(), 0xFF0A0403.toInt(), 0xFFE0A493.toInt(), true),
-        T("ice", "Minimal", 0xFFFFFFFF.toInt(), 0xFF9CC4FF.toInt(), 0xFF20262C.toInt(), 0xFF161A1E.toInt(), 0xFFB0BAC4.toInt(), false),
+        T("neon", "Neon", c(0xFF00E5FF), c(0xFF00FF9C), c(0xFF0E1624), c(0xFF04070C), c(0xFF8FB3C9), "hud"),
+        T("bambu", "Zelená", c(0xFF00C853), c(0xFFB2FF59), c(0xFF0E1A12), c(0xFF040805), c(0xFF9FC4A8), "hud"),
+        T("synth", "Synthwave", c(0xFFFF2BD6), c(0xFF7B5CFF), c(0xFF1A0F2A), c(0xFF07030D), c(0xFFC7AEE8), "hud"),
+        T("space", "Vesmírná loď", c(0xFF4FC3F7), c(0xFFFF9800), c(0xFF07111F), c(0xFF02060C), c(0xFF8FB8D9), "hud"),
+        T("lava", "Láva", c(0xFFFF6A00), c(0xFFFF0055), c(0xFF22100A), c(0xFF0A0403), c(0xFFE0A493), "hud"),
+        T("terminal", "Retro terminál (pustina)", c(0xFF41FF6A), c(0xFFB4FFC4), c(0xFF04160A), c(0xFF000502), c(0xFF39C45B), "terminal"),
+        T("terminal_amber", "Terminál jantarový", c(0xFFFFB641), c(0xFFFFE1A8), c(0xFF181002), c(0xFF050300), c(0xFFC98B2E), "terminal"),
+        T("cyber", "Kyberpunk", c(0xFFFCEE0A), c(0xFF00F0FF), c(0xFF0B0A14), c(0xFF16001F), c(0xFFFF5C93), "cyber"),
+        T("fantasy", "Temné fantasy", c(0xFFB3261E), c(0xFFE0574D), c(0xFF1C1D21), c(0xFF0B0B0D), c(0xFFA9ADB3), "fantasy"),
+        T("parchment", "Pergamen", c(0xFF8B1E1E), c(0xFF5A3E1B), c(0xFFEBDCB0), c(0xFFCDB27A), c(0xFF5A4326), "parchment"),
+        T("steam", "Steampunk", c(0xFFC8963E), c(0xFFF3D27A), c(0xFF2C1D12), c(0xFF120A05), c(0xFFCDAE7E), "steam"),
+        T("pixel", "8-bit retro hra", c(0xFFFF004D), c(0xFFFFA300), c(0xFF1D2B53), c(0xFF10183A), c(0xFFC2C3C7), "pixel"),
+        T("matrix", "Matrix", c(0xFF00FF41), c(0xFF00A82B), c(0xFF041208), c(0xFF010402), c(0xFF7FD68F), "hud"),
+        T("amber", "Retro jantar", c(0xFFFFB000), c(0xFFFFE066), c(0xFF1C1408), c(0xFF090602), c(0xFFD9B97A), "hud"),
+        T("ice", "Minimal", c(0xFFFFFFFF), c(0xFF9CC4FF), c(0xFF20262C), c(0xFF161A1E), c(0xFFB0BAC4), "minimal"),
     )
 
     fun get(k: String) = ALL.firstOrNull { it.key == k } ?: ALL[0]

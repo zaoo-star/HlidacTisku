@@ -57,9 +57,9 @@ class WidgetConfigActivity : AppCompatActivity() {
         }
         c.addView(Ui.section(this, "Tvar"))
         c.addView(chips(WidgetOpts.SHAPES.map { it.first to it.second }, shape, null) { shape = it; updatePreview() })
-        c.addView(Ui.section(this, "Barvy"))
+        c.addView(Ui.section(this, "Styl a barvy"))
         c.addView(chips(Themes.ALL.map { it.key to it.label }, theme, Themes.ALL.associate { it.key to it.a }) { theme = it; updatePreview() })
-        c.addView(Ui.text(this, "Barvy se projeví hlavně u futuristického vzhledu; u klasického barví průběh.", 12f, Ui.GREY).apply {
+        c.addView(Ui.text(this, "Herní a retro styly (terminál, kyberpunk, fantasy, pergamen, steampunk, 8-bit) mají vlastní písmo, rámeček i kruh – nejlépe vyniknou u tvaru ✨ Futuristický. U klasických tvarů se použije jen barva.", 12f, Ui.GREY).apply {
             setPadding(Ui.dp(this@WidgetConfigActivity, 4), Ui.dp(this@WidgetConfigActivity, 6), 0, 0)
         })
 
