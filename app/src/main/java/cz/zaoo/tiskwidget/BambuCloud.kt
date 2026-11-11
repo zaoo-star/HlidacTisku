@@ -85,16 +85,48 @@ object BambuCloud {
     } catch (e: Exception) { Login.Err("Chyba sítě: ${e.message}") }
 
     /** MQTT uživatel je "u_<uid>". */
+    /**
+     * MQTT uživatel je "u_<uid>". Nejdřív ho přečte přímo z přihlašovacího tokenu (JWT),
+     * teprve pak se ptá serveru – ten totiž občas místo dat vrátí webovou stránku (ochrana proti botům).
+     */
     fun username(token: String): String {
-        val r = req("GET", "$API/v1/design-user-service/my/preference", token = token)
-        val uid = JSONObject(r.body).optLong("uid", 0L)
-        if (uid == 0L) throw Exception("Nepodařilo se zjistit ID účtu (HTTP ${r.code})")
-        return "u_$uid"
+        fromJwt(token)?.let { return it }
+        var lastCode = 0
+        for (path in listOf("/v1/user-service/my/profile", "/v1/design-user-service/my/preference")) {
+            try {
+                val r = req("GET", "$API$path", token = token)
+                lastCode = r.code
+                val j = parseJson(r.body) ?: continue
+                val uid = j.optString("uidStr", "").ifEmpty { j.optLong("uid", 0L).takeIf { it != 0L }?.toString() ?: "" }
+                if (uid.isNotEmpty()) return "u_$uid"
+            } catch (_: Exception) {}
+        }
+        throw Exception("Bambu server teď nepustil načtení účtu (HTTP $lastCode). Zkus to za pár minut znovu, " +
+            "nebo přidej tiskárnu přes „Jen v domácí síti“.")
     }
 
+    /** Token bývá JWT – v jeho druhé části je přímo "username": "u_123…". */
+    private fun fromJwt(token: String): String? = try {
+        val part = token.split('.').getOrNull(1) ?: throw Exception()
+        val json = String(android.util.Base64.decode(part, android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP))
+        val j = JSONObject(json)
+        val u = j.optString("username", "")
+        when {
+            u.startsWith("u_") -> u
+            j.optLong("uid", 0L) != 0L -> "u_" + j.optLong("uid")
+            else -> null
+        }
+    } catch (_: Exception) { null }
+
+    /** Bezpečné čtení JSON – když server vrátí HTML (Cloudflare), vrátí null. */
+    private fun parseJson(body: String): JSONObject? =
+        if (body.trimStart().startsWith("{")) try { JSONObject(body) } catch (_: Exception) { null } else null
+
     fun devices(token: String): List<Device> {
-        val r = req("GET", "$API/v1/iot-service/api/user/bind", token = token)
-        val arr = JSONObject(r.body).optJSONArray("devices") ?: return emptyList()
+        var r = req("GET", "$API/v1/iot-service/api/user/bind", token = token)
+        if (parseJson(r.body) == null) { Thread.sleep(1500); r = req("GET", "$API/v1/iot-service/api/user/bind", token = token) }
+        val j = parseJson(r.body) ?: throw Exception("Bambu server teď nevrátil seznam tiskáren (HTTP ${r.code}). Zkus to za pár minut znovu.")
+        val arr = j.optJSONArray("devices") ?: return emptyList()
         return (0 until arr.length()).map {
             val d = arr.getJSONObject(it)
             Device(
